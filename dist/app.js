@@ -313,7 +313,11 @@
     $('totalCount').textContent = String(state.all.length).padStart(2, '0');
     $('photoCount').textContent = String(state.all.reduce((total, place) => total + place.photos.length, 0)).padStart(2, '0');
     filterPlaces();
-    setTimeout(fitAll, 300);
+    const linkedWaypoint = new URLSearchParams(window.location.search).get('waypoint');
+    setTimeout(() => {
+      if (linkedWaypoint && state.visible.some(place => place.id === linkedWaypoint)) openPlace(linkedWaypoint);
+      else fitAll();
+    }, 300);
   }
 
   function bindActions() {
