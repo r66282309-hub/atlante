@@ -621,6 +621,27 @@
     }
   }
 
+  function revealNewBlock(id) {
+    const block = document.getElementById(`block-${id}`);
+    if (!block) return;
+
+    // Keep keyboard focus on the newly-created section without letting the
+    // browser move a different scroll container behind the editor.
+    const field = block.querySelector('input, textarea, select');
+    field?.focus({ preventScroll: true });
+
+    const stage = $('storyStage');
+    if (getComputedStyle(stage).overflowY === 'visible') {
+      // On mobile the document scrolls, while desktop uses its own stage.
+      block.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
+
+    const top = block.getBoundingClientRect().top
+      - stage.getBoundingClientRect().top + stage.scrollTop - 28;
+    stage.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+  }
+
   function addBlock(type) {
     if (!TYPES.includes(type)) return;
     if (state.preview) { state.preview = false; renderStory(); }
@@ -628,7 +649,8 @@
     state.current.blocks.push(block);
     queueSave();
     renderBlocks();
-    document.getElementById(`block-${block.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    // Let the new section and its Leaflet map finish layout before scrolling.
+    requestAnimationFrame(() => requestAnimationFrame(() => revealNewBlock(block.id)));
     notice(`${TYPE_NAMES[type]} aggiunto alla geostoria.`);
   }
 
