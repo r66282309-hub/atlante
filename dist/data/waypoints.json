@@ -1,0 +1,62 @@
+[
+  {
+    "id": "demo-sa-stiddiosa",
+    "title": "Sa Stiddiosa",
+    "area": "Seulo · Barbagia di Seulo",
+    "category": "natura",
+    "lat": 39.869,
+    "lon": 9.228,
+    "visited_at": "2026-11-07",
+    "description": "L'acqua, la roccia e il silenzio. Un luogo da segnare sul proprio atlante, dove il paesaggio invita a fermarsi.",
+    "photos": ["https://images.unsplash.com/photo-1433086966358-54859d0ed716?w=1200&q=85", "https://images.unsplash.com/photo-1472396961693-142e6e269027?w=900&q=85"],
+    "demo": true
+  },
+  {
+    "id": "demo-porto-ferro",
+    "title": "Porto Ferro",
+    "area": "Sassari · Nurra",
+    "category": "mare",
+    "lat": 40.684,
+    "lon": 8.204,
+    "visited_at": "2026-10-18",
+    "description": "Una lunga spiaggia aperta al maestrale, dune e macchia mediterranea. Il mare come punto di partenza per esplorare.",
+    "photos": ["https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1200&q=85"],
+    "demo": true
+  },
+  {
+    "id": "demo-ulassai",
+    "title": "Ulassai e i Tacchi",
+    "area": "Ulassai · Ogliastra",
+    "category": "trekking",
+    "lat": 39.809,
+    "lon": 9.5,
+    "visited_at": "2026-09-26",
+    "description": "Pareti calcaree, altipiani e sentieri sospesi. Una Sardegna verticale, perfetta per camminare e osservare.",
+    "photos": ["https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=1200&q=85"],
+    "demo": true
+  },
+  {
+    "id": "demo-seulo",
+    "title": "Seulo",
+    "area": "Seulo · Sardegna centrale",
+    "category": "borghi",
+    "lat": 39.869,
+    "lon": 9.236,
+    "visited_at": "2026-11-06",
+    "description": "Un paese raccolto tra montagne e corsi d'acqua, base ideale per raggiungere i paesaggi della Barbagia.",
+    "photos": ["https://images.unsplash.com/photo-1516483638261-f4dbaf036963?w=1200&q=85"],
+    "demo": true
+  },
+  {
+    "id": "demo-capo-caccia",
+    "title": "Capo Caccia",
+    "area": "Alghero · Riviera del Corallo",
+    "category": "mare",
+    "lat": 40.565,
+    "lon": 8.165,
+    "visited_at": "2026-08-15",
+    "description": "La falesia che incontra il mare. Un punto panoramico che cambia volto con la luce del pomeriggio.",
+    "photos": ["https://images.unsplash.com/photo-1473116763249-2faaef81ccda?w=1200&q=85"],
+    "demo": true
+  }
+]
