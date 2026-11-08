@@ -408,7 +408,9 @@
     const container = document.createElement('div');
     container.className = 'youtube-frame';
     const iframe = document.createElement('iframe');
-    iframe.src = `https://www.youtube-nocookie.com/embed/${id}`;
+    // Native YouTube click-to-play/pause remains active; only the standard
+    // control strip is hidden. YouTube attribution may still be displayed.
+    iframe.src = `https://www.youtube-nocookie.com/embed/${id}?controls=0&playsinline=1&rel=0`;
     iframe.title = 'Video YouTube incorporato nella geostoria';
     iframe.loading = 'lazy';
     iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share';
