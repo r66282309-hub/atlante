@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#193433" />
+    <meta name="description" content="Componi geostorie con tappe, fotografie, video e mappe interattive nel tuo Atlante." />
+    <title>Geostorie — Atlante</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="../styles.css" />
+    <link rel="stylesheet" href="./stories.css" />
+    <script defer src="../config.js"></script>
+    <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script defer src="./stories.js"></script>
+  </head>
+  <body class="story-body">
+    <div class="story-app" id="storyApp">
+      <aside class="story-sidebar" aria-label="Archivio delle geostorie">
+        <div class="story-brand-bar">
+          <a href="../" class="brand" aria-label="Torna alla mappa dell'Atlante">
+            <span class="brand-symbol" aria-hidden="true">
+              <svg viewBox="0 0 40 40" fill="none"><circle cx="20" cy="20" r="15" stroke="currentColor" stroke-width="1.2"/><path d="M20 3v34M3 20h34M9 9l22 22M31 9 9 31" stroke="currentColor" stroke-width=".8" opacity=".5"/><path d="m20 9 3 11-3 11-3-11 3-11Z" fill="currentColor"/></svg>
+            </span>
+            <span class="brand-copy"><strong>atlante<span class="brand-dot">.</span></strong><small>DIARIO GEOGRAFICO</small></span>
+          </a>
+          <span class="story-edition-badge">STUDIO</span>
+        </div>
+        <nav class="story-top-nav" aria-label="Sezioni">
+          <a href="../"><span>◈</span> Mappa</a>
+          <a href="./" class="active" aria-current="page"><span>✳</span> Geostorie</a>
+        </nav>
+        <div class="story-side-scroll">
+          <div class="story-side-kicker">RACCONTI GEOGRAFICI <span>— 01</span></div>
+          <h1>La geografia<br /><em>si racconta.</em></h1>
+          <p class="story-side-intro">Dai punti sulla mappa alle storie. Unisci luoghi, immagini, parole e percorsi in un solo racconto.</p>
+          <button id="newStoryButton" class="story-new-button" type="button"><span>＋</span> Nuova geostoria</button>
+          <div class="drafts-heading"><span>IL TUO ARCHIVIO</span><span id="storyCount">0</span></div>
+          <div id="storyList" class="draft-list" aria-live="polite"><p class="draft-loading">Apro il tuo archivio…</p></div>
+        </div>
+        <div class="story-local-note">
+          <span class="local-pulse"></span>
+          <div><strong>Bozze salvate nel browser</strong><small>Per ora non sono pubblicate online.</small></div>
+          <button id="helpButton" type="button" aria-label="Informazioni sul salvataggio" title="Informazioni">?</button>
+        </div>
+      </aside>
+
+      <main class="story-main" aria-label="Editor della geostoria">
+        <header class="story-toolbar">
+          <div class="story-breadcrumb"><span>GEOSTORIE</span><span class="breadcrumb-divider">/</span><strong id="toolbarStoryTitle">Il mio racconto</strong></div>
+          <div class="story-toolbar-actions">
+            <span class="save-indicator" id="saveIndicator"><span class="save-light"></span> Caricamento…</span>
+            <button class="toolbar-button hide-small" type="button" id="importButton" title="Importa una geostoria JSON"><svg viewBox="0 0 24 24" fill="none"><path d="M12 16V3m0 0L8 7m4-4 4 4M4 17v4h16v-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg> Importa</button>
+            <button class="toolbar-button hide-small" type="button" id="exportButton" title="Esporta la bozza come JSON"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3v13m0 0-4-4m4 4 4-4M4 17v4h16v-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg> Esporta</button>
+            <button class="toolbar-button" type="button" id="duplicateButton" title="Duplica la geostoria">Duplica</button>
+            <button class="toolbar-button delete-story-button" type="button" id="deleteStoryButton" title="Elimina questa bozza">Elimina</button>
+            <button class="preview-button" type="button" id="previewButton" aria-pressed="false"><span id="previewIcon">◉</span><span id="previewLabel">Anteprima</span></button>
+          </div>
+        </header>
+
+        <div class="story-stage" id="storyStage">
+          <article class="story-paper" id="storyDocument" aria-label="Contenuto della geostoria">
+            <div class="story-cover" id="storyCover">
+              <div class="cover-gradient"></div>
+              <span class="cover-label">ATLANTE / GEOSTORIE <span>✳</span></span>
+              <span class="cover-decor" aria-hidden="true">N<br />↟<br />S</span>
+            </div>
+            <div class="cover-editor editor-only" id="coverEditor">
+              <label for="coverUrl">IMMAGINE DI COPERTINA</label>
+              <input id="coverUrl" type="url" placeholder="Incolla un URL immagine (https://...)" autocomplete="off" />
+              <span>oppure</span>
+              <button type="button" id="coverUploadButton">Carica foto</button>
+            </div>
+            <div class="story-heading-area">
+              <div class="story-kicker"><span class="kicker-line"></span><input id="storyKicker" class="story-kicker-input" aria-label="Etichetta della storia" placeholder="DIARIO DI VIAGGIO" maxlength="70" /></div>
+              <textarea id="storyTitle" class="story-title-input" aria-label="Titolo della geostoria" rows="2" placeholder="Dai un titolo alla tua geostoria" maxlength="180"></textarea>
+              <textarea id="storySubtitle" class="story-subtitle-input" aria-label="Sottotitolo della geostoria" rows="2" placeholder="Una frase per introdurre il viaggio…" maxlength="400"></textarea>
+              <div class="story-heading-meta"><span>✳ UN RACCONTO GEOGRAFICO</span><span id="storyUpdatedAt">Bozza</span></div>
+            </div>
+            <div id="storyBlocks" class="story-blocks" aria-live="polite"></div>
+            <button class="append-block-button editor-only" id="appendBlockButton" type="button"><span>＋</span> Aggiungi una nuova sezione</button>
+            <div class="story-finale"><span>✳</span><p>Ogni luogo ha una storia.</p><small>ATLANTE · GEOSTORIE</small></div>
+          </article>
+        </div>
+      </main>
+
+      <aside class="story-tools" aria-label="Strumenti di composizione">
+        <div class="tools-header"><div><span class="tools-heading-label">LA TUA CASSETTA DEGLI ATTREZZI</span><h2>Componi la storia<span>.</span></h2></div><span class="tools-spark">✳</span></div>
+        <div class="tools-scroll">
+          <p class="tools-section-name">AGGIUNGI UN BLOCCO</p>
+          <div class="block-picker" id="blockPicker">
+            <button type="button" data-add="heading"><span class="picker-icon heading-icon">T</span><span><strong>Titolo</strong><small>Una nuova sezione</small></span><span class="picker-plus">＋</span></button>
+            <button type="button" data-add="paragraph"><span class="picker-icon text-icon">≡</span><span><strong>Testo</strong><small>Appunti e racconti</small></span><span class="picker-plus">＋</span></button>
+            <button type="button" data-add="waypoint"><span class="picker-icon point-icon">⌖</span><span><strong>Waypoint</strong><small>Luoghi dal tuo Atlante</small></span><span class="picker-plus">＋</span></button>
+            <button type="button" data-add="image"><span class="picker-icon image-icon">▧</span><span><strong>Fotografia</strong><small>Dal computer o via URL</small></span><span class="picker-plus">＋</span></button>
+            <button type="button" data-add="video"><span class="picker-icon video-icon">▶</span><span><strong>Video YouTube</strong><small>Filmati incorporati</small></span><span class="picker-plus">＋</span></button>
+            <button type="button" data-add="map"><span class="picker-icon map-icon">◇</span><span><strong>Mini-mappa</strong><small>Cartografia Leaflet</small></span><span class="picker-plus">＋</span></button>
+          </div>
+          <div class="tool-divider"></div>
+          <div class="outline-heading"><span class="tools-section-name">STRUTTURA DEL RACCONTO</span><span id="blockCount">0 blocchi</span></div>
+          <div class="story-outline" id="storyOutline"></div>
+          <div class="tool-hint"><span>✳</span><strong>Un racconto, tanti modi di esplorare.</strong><p>Puoi spostare i blocchi, inserire waypoint già presenti sulla mappa e creare mini-mappe indipendenti con coordinate personalizzate.</p></div>
+        </div>
+      </aside>
+    </div>
+
+    <div class="story-toast" id="storyToast" role="status" aria-live="polite"></div>
+    <input id="coverFileInput" type="file" accept="image/*" hidden />
+    <input id="blockImageInput" type="file" accept="image/*" hidden />
+    <input id="importFileInput" type="file" accept="application/json,.json" hidden />
+    <dialog class="story-dialog block-choice-dialog" id="blockChoiceDialog" aria-labelledby="blockChoiceTitle">
+      <form method="dialog"><button class="dialog-close" aria-label="Chiudi">×</button></form>
+      <span class="dialog-kicker">COMPONI IL TUO RACCONTO</span>
+      <h2 id="blockChoiceTitle">Una nuova <em>sezione.</em></h2>
+      <div class="block-choice-picker" id="blockChoicePicker">
+        <button type="button" data-add="heading"><span>𝐓</span>Titolo</button>
+        <button type="button" data-add="paragraph"><span>≡</span>Testo</button>
+        <button type="button" data-add="waypoint"><span>⌖</span>Waypoint</button>
+        <button type="button" data-add="image"><span>▧</span>Fotografia</button>
+        <button type="button" data-add="video"><span>▶</span>Video YouTube</button>
+        <button type="button" data-add="map"><span>◇</span>Mini-mappa</button>
+      </div>
+    </dialog>
+    <dialog class="story-dialog" id="helpDialog" aria-labelledby="helpTitle">
+      <form method="dialog"><button class="dialog-close" aria-label="Chiudi">×</button></form>
+      <span class="dialog-kicker">UNA NOTA SUL SALVATAGGIO</span>
+      <h2 id="helpTitle">Bozze locali,<br /><em>idee senza limiti.</em></h2>
+      <p>Le geostorie si salvano automaticamente nella memoria di questo browser (IndexedDB), incluse le fotografie che scegli dal computer. Non sono pubbliche e non vengono inviate a server.</p>
+      <p>Per avere una copia indipendente dal browser, usa <strong>Esporta</strong>. Quando integreremo Supabase, aggiungeremo il login e la pubblicazione delle geostorie.</p>
+      <form method="dialog"><button class="dialog-action">Continua a scrivere</button></form>
+    </dialog>
+  </body>
+</html>
