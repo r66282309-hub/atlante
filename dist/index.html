@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#152a2b" />
+    <meta name="description" content="Un atlante personale dei luoghi visitati, tra sentieri, borghi, mare e fotografie." />
+    <title>Atlante — Il mio diario geografico</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="./styles.css" />
+    <script defer src="./config.js"></script>
+    <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script defer src="./app.js"></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Esplora l'atlante">
+        <div class="sidebar-top">
+          <a class="brand" href="./" aria-label="Atlante, pagina iniziale">
+            <span class="brand-symbol" aria-hidden="true">
+              <svg viewBox="0 0 40 40" fill="none"><circle cx="20" cy="20" r="15" stroke="currentColor" stroke-width="1.2"/><path d="M20 3v34M3 20h34M9 9l22 22M31 9 9 31" stroke="currentColor" stroke-width=".8" opacity=".5"/><path d="m20 9 3 11-3 11-3-11 3-11Z" fill="currentColor"/></svg>
+            </span>
+            <span class="brand-copy"><strong>atlante<span class="brand-dot">.</span></strong><small>DIARIO GEOGRAFICO</small></span>
+          </a>
+          <button class="icon-button intro-button" id="aboutButton" aria-label="Informazioni sul progetto" title="Informazioni sul progetto">i</button>
+        </div>
+
+        <div class="sidebar-content">
+          <div class="eyebrow"><span class="eyebrow-line"></span> IL MIO TACCUINO DI VIAGGIO</div>
+          <h1>Luoghi da<br /><em>ricordare.</em></h1>
+          <p class="lead">Coordinate, fotografie e piccoli racconti. Una mappa dei posti che meritano di restare.</p>
+
+          <div class="stats-card">
+            <div><span class="stat-value" id="totalCount">—</span><span class="stat-label">Luoghi raccolti</span></div>
+            <span class="stats-divider"></span>
+            <div><span class="stat-value" id="photoCount">—</span><span class="stat-label">Fotografie</span></div>
+            <span class="stats-doodle" aria-hidden="true">↗</span>
+          </div>
+
+          <div class="search-wrap">
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><circle cx="10.8" cy="10.8" r="6.5" stroke="currentColor" stroke-width="1.8"/><path d="m16 16 5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+            <input id="searchInput" type="search" placeholder="Cerca un luogo, un ricordo..." autocomplete="off" aria-label="Cerca luoghi" />
+            <span class="search-shortcut">⌕</span>
+          </div>
+
+          <div class="filters" id="filters" role="group" aria-label="Filtra per categoria">
+            <button class="filter active" data-category="tutti" aria-pressed="true">Tutti</button>
+            <button class="filter" data-category="natura" aria-pressed="false">Natura</button>
+            <button class="filter" data-category="mare" aria-pressed="false">Mare</button>
+            <button class="filter" data-category="borghi" aria-pressed="false">Borghi</button>
+            <button class="filter" data-category="trekking" aria-pressed="false">Trekking</button>
+          </div>
+
+          <div class="list-header"><div><span class="section-label">POSTI SULLA MAPPA</span><span class="result-count" id="visibleCount">0</span></div><button class="text-button" id="fitListButton" type="button">Vedi tutti ↗</button></div>
+          <div class="place-list" id="placeList" aria-live="polite"><div class="loading-state">Caricamento luoghi…</div></div>
+        </div>
+
+        <div class="sidebar-footer">
+          <div class="data-state"><span class="status-dot"></span><span id="dataStatus">Anteprima con luoghi di esempio</span></div>
+          <div class="footer-actions"><button id="exportButton" class="footer-button" type="button" title="Esporta i luoghi in GeoJSON"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v4h16v-4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg> GeoJSON</button><button id="addButton" class="add-button" type="button"><span>＋</span> Aggiungi luogo</button></div>
+        </div>
+      </aside>
+
+      <main class="map-area" aria-label="Mappa dei luoghi">
+        <div id="map" role="application" aria-label="Mappa interattiva Leaflet"></div>
+        <div class="map-topbar">
+          <div class="map-location-pill"><span class="location-pulse"></span><span>IL MIO ATLANTE</span><span class="pill-separator">/</span><strong>Sardegna, Italia</strong></div>
+          <div class="map-style-control" role="group" aria-label="Sfondo mappa">
+            <button id="osmButton" class="base-button is-active" aria-pressed="true" type="button"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3V6Zm6-3v15m6-12v15" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg> Mappa</button>
+            <button id="satelliteButton" class="base-button" aria-pressed="false" type="button"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3" stroke="currentColor" stroke-width="1.5"/><path d="m3 16 5-5 4 4 3-3 6 6M16 8h.01" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg> Satellite</button>
+          </div>
+        </div>
+        <div class="map-floating-left"><div class="map-note"><span class="map-note-glyph">✳</span><div><strong>La mappa dei ricordi</strong><small>Seleziona un punto per aprire la sua storia.</small></div></div></div>
+        <div class="map-tool-stack">
+          <button id="fitMapButton" type="button" title="Inquadra tutti i luoghi" aria-label="Inquadra tutti i luoghi"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8 3H4a1 1 0 0 0-1 1v4m13-5h4a1 1 0 0 1 1 1v4M8 21H4a1 1 0 0 1-1-1v-4m13 5h4a1 1 0 0 0 1-1v-4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></button>
+          <button id="locateButton" type="button" title="Mostra la mia posizione" aria-label="Mostra la mia posizione"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="7" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="2" fill="currentColor"/><path d="M12 1v4m0 14v4M1 12h4m14 0h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>
+        </div>
+
+        <section class="detail-panel" id="detailPanel" aria-label="Dettagli del luogo" aria-hidden="true">
+          <button id="closeDetailButton" class="close-detail" type="button" aria-label="Chiudi dettagli">×</button>
+          <div class="detail-photo" id="detailPhoto"><span class="detail-photo-tag">FOTO DIMOSTRATIVA</span></div>
+          <div class="detail-body"><div class="detail-meta"><span id="detailCategory">NATURA</span><span id="detailDate"></span></div><h2 id="detailTitle"></h2><p class="detail-area" id="detailArea"></p><p class="detail-description" id="detailDescription"></p><div class="photo-strip" id="photoStrip"></div><div class="detail-footer"><div class="coords"><span>COORDINATE</span><strong id="detailCoords"></strong></div><button id="copyCoordsButton" type="button" class="copy-button">Copia ↗</button></div></div>
+        </section>
+
+        <div class="map-credits">MADE FOR WANDERING <span>✷</span> AND REMEMBERING</div>
+        <div class="toast" id="toast" role="status" aria-live="polite"></div>
+      </main>
+    </div>
+
+    <dialog id="infoDialog" class="info-dialog" aria-labelledby="dialogTitle">
+      <form method="dialog"><button class="dialog-close" aria-label="Chiudi">×</button></form>
+      <span class="dialog-kicker">IL PROGETTO</span>
+      <h2 id="dialogTitle">Un archivio di luoghi,<br /><em>un ricordo alla volta.</em></h2>
+      <p>Questa è la prima versione del tuo atlante personale. Puoi esplorare i punti di esempio, filtrare i luoghi, passare dalla mappa OSM al satellite ed esportare i waypoint in GeoJSON.</p>
+      <div class="dialog-message"><span>✳</span><div><strong>Prossimo passo: Supabase</strong><p>Quando configureremo il progetto, potrai autenticarti, caricare i tuoi waypoint e le foto, e pubblicarli sulla mappa. I luoghi presenti ora sono solo dimostrativi.</p></div></div>
+      <form method="dialog"><button class="dialog-action">Ho capito</button></form>
+    </dialog>
+  </body>
+</html>
