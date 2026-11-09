@@ -118,8 +118,14 @@
   async function syncSession() {
     if (!auth.client) return;
     try {
-      const { data: { user }, error } = await auth.client.auth.getUser();
-      if (error) throw error;
+      const { data: { session }, error: sessionError } = await auth.client.auth.getSession();
+      if (sessionError) throw sessionError;
+      let user = null;
+      if (session) {
+        const result = await auth.client.auth.getUser();
+        if (result.error) throw result.error;
+        user = result.data.user;
+      }
       auth.user = user;
       auth.editor = false;
       if (user) {
