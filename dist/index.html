@@ -12,10 +12,11 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="./styles.css" />
     <link rel="stylesheet" href="./auth.css" />
+    <link rel="stylesheet" href="./atlas-editor.css" />
     <script defer src="./config.js"></script>
     <script defer src="./auth.js?v=20261109-login2"></script>
     <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-    <script defer src="./app.js"></script>
+    <script defer src="./app.js?v=20261109-cloud"></script>
   </head>
   <body>
     <div class="app-shell">
@@ -89,7 +90,7 @@
         <section class="detail-panel" id="detailPanel" aria-label="Dettagli del luogo" aria-hidden="true">
           <button id="closeDetailButton" class="close-detail" type="button" aria-label="Chiudi dettagli">×</button>
           <div class="detail-photo" id="detailPhoto"><span class="detail-photo-tag">FOTO DIMOSTRATIVA</span></div>
-          <div class="detail-body"><div class="detail-meta"><span id="detailCategory">NATURA</span><span id="detailDate"></span></div><h2 id="detailTitle"></h2><p class="detail-area" id="detailArea"></p><p class="detail-description" id="detailDescription"></p><div class="photo-strip" id="photoStrip"></div><div class="detail-footer"><div class="coords"><span>COORDINATE</span><strong id="detailCoords"></strong></div><button id="copyCoordsButton" type="button" class="copy-button">Copia ↗</button></div></div>
+          <div class="detail-body"><div class="detail-meta"><span id="detailCategory">NATURA</span><span id="detailDate"></span></div><h2 id="detailTitle"></h2><p class="detail-area" id="detailArea"></p><p class="detail-description" id="detailDescription"></p><div class="photo-strip" id="photoStrip"></div><div class="detail-footer"><div class="coords"><span>COORDINATE</span><strong id="detailCoords"></strong></div><button id="copyCoordsButton" type="button" class="copy-button">Copia ↗</button></div><button id="editPlaceButton" type="button" class="edit-place-button" hidden>✎ Modifica questo luogo</button></div>
         </section>
 
         <div class="map-credits">MADE FOR WANDERING <span>✷</span> AND REMEMBERING</div>
@@ -101,9 +102,26 @@
       <form method="dialog"><button class="dialog-close" aria-label="Chiudi">×</button></form>
       <span class="dialog-kicker">IL PROGETTO</span>
       <h2 id="dialogTitle">Un archivio di luoghi,<br /><em>un ricordo alla volta.</em></h2>
-      <p>Questa è la prima versione del tuo atlante personale. Puoi esplorare i punti di esempio, filtrare i luoghi, passare dalla mappa OSM al satellite ed esportare i waypoint in GeoJSON.</p>
-      <div class="dialog-message"><span>✳</span><div><strong>Prossimo passo: Supabase</strong><p>Quando configureremo il progetto, potrai autenticarti, caricare i tuoi waypoint e le foto, e pubblicarli sulla mappa. I luoghi presenti ora sono solo dimostrativi.</p></div></div>
+      <p>Esplora i luoghi, filtra per categoria, scegli lo sfondo OSM o satellite ed esporta i waypoint in GeoJSON. L'editor può aggiungere nuovi punti con fotografie e descrizioni direttamente sulla mappa.</p>
+      <div class="dialog-message"><span>✳</span><div><strong>Un archivio sincronizzato</strong><p>Waypoint e geostorie sono conservati nel progetto Supabase dell'Atlante. Soltanto gli editor autorizzati possono modificarli; le bozze restano riservate.</p></div></div>
       <form method="dialog"><button class="dialog-action">Ho capito</button></form>
+    </dialog>
+    <dialog id="waypointDialog" class="waypoint-dialog" aria-labelledby="waypointDialogTitle">
+      <form id="waypointForm">
+        <div class="waypoint-dialog-top"><div><span class="dialog-kicker">ATLANTE / AREA EDITOR</span><h2 id="waypointDialogTitle">Nuovo <em>luogo.</em></h2></div><button id="closeWaypointDialog" type="button" class="dialog-close" aria-label="Chiudi">×</button></div>
+        <p class="waypoint-form-intro">Puoi salvare una bozza privata e pubblicarla quando vuoi.</p>
+        <label for="waypointTitle">Nome del luogo <span>*</span></label><input id="waypointTitle" name="title" required maxlength="180" placeholder="Es. Sa Stiddiosa" />
+        <div class="waypoint-form-row"><div><label for="waypointArea">Località</label><input id="waypointArea" name="area" maxlength="160" placeholder="Seulo, Sardegna" /></div><div><label for="waypointCategory">Categoria</label><select id="waypointCategory" name="category"><option value="natura">Natura</option><option value="mare">Mare</option><option value="borghi">Borghi</option><option value="trekking">Trekking</option></select></div></div>
+        <div class="waypoint-form-row"><div><label for="waypointLat">Latitudine <span>*</span></label><input id="waypointLat" name="lat" type="number" step="any" min="-90" max="90" required /></div><div><label for="waypointLon">Longitudine <span>*</span></label><input id="waypointLon" name="lon" type="number" step="any" min="-180" max="180" required /></div></div>
+        <button id="waypointPickMap" class="waypoint-coords-button" type="button">⌖ Scegli coordinate sulla mappa</button>
+        <label for="waypointVisited">Data visita</label><input id="waypointVisited" name="visited_at" type="date" />
+        <label for="waypointDescription">Descrizione</label><textarea id="waypointDescription" name="description" rows="4" maxlength="10000" placeholder="Il paesaggio, il percorso, i ricordi…"></textarea>
+        <label for="waypointPhotos">Fotografie (max 10 MB per file)</label><input id="waypointPhotos" name="photos" type="file" accept="image/jpeg,image/png,image/webp,image/avif" multiple />
+        <div id="waypointExistingPhotos" class="waypoint-existing-photos"></div>
+        <label class="waypoint-published"><input id="waypointPublished" name="published" type="checkbox" /><span>Pubblica il waypoint sulla mappa per tutti</span></label>
+        <p id="waypointFormStatus" class="waypoint-form-status" role="status" aria-live="polite"></p>
+        <div class="waypoint-dialog-actions"><button id="waypointDelete" type="button" class="waypoint-danger" hidden>Elimina luogo</button><button id="waypointSave" type="submit" class="dialog-action">Salva luogo</button></div>
+      </form>
     </dialog>
   </body>
 </html>

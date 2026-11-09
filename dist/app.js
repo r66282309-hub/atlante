@@ -5,7 +5,7 @@
   const $ = id => document.getElementById(id);
   const labels = { natura: 'Natura', mare: 'Mare', borghi: 'Borghi', trekking: 'Trekking' };
   const symbols = { natura: '✳', mare: '≈', borghi: '⌂', trekking: '▲' };
-  const state = { all: [], visible: [], selectedId: null, category: 'tutti', query: '', demo: true, markers: new Map(), photoIndex: 0, currentLayer: 'osm' };
+  const state = { all: [], visible: [], selectedId: null, category: 'tutti', query: '', demo: true, markers: new Map(), photoIndex: 0, currentLayer: 'osm', editingId: null, retainedPhotos: [], saving: false, picking: false };
   let map;
   let markersGroup;
   let osmLayer;
@@ -32,6 +32,8 @@
       area: String(row.area || ''), category: labels[row.category] ? row.category : 'natura',
       lat, lon, visited_at: row.visited_at || null,
       description: String(row.description || 'Nessuna descrizione disponibile.'),
+      photoPaths: photos.slice(),
+      published: Boolean(row.published),
       photos: photos.map(photo => {
         if (typeof photo !== 'string') return null;
         if (/^https?:\/\//i.test(photo)) return safeImage(photo);
@@ -91,7 +93,7 @@
     const category = place.category;
     return L.divIcon({
       className: 'atlas-marker-wrap',
-      html: `<span class="atlas-marker ${category}${isSelected ? ' selected' : ''}"><i aria-hidden="true">${symbols[category]}</i></span>`,
+      html: `<span class="atlas-marker ${category}${isSelected ? ' selected' : ''}${place.published || place.demo ? '' : ' is-draft'}"><i aria-hidden="true">${symbols[category]}</i></span>`,
       iconSize: [42, 42], iconAnchor: [19, 39]
     });
   }
@@ -115,7 +117,7 @@
   function makePlaceCard(place) {
     const item = document.createElement('button');
     item.type = 'button';
-    item.className = `place-card${state.selectedId === place.id ? ' selected' : ''}`;
+    item.className = `place-card${state.selectedId === place.id ? ' selected' : ''}${!place.demo && !place.published ? ' is-draft' : ''}`;
     item.setAttribute('aria-label', `Mostra ${place.title} sulla mappa`);
 
     const thumb = document.createElement('span');
@@ -132,7 +134,7 @@
     data.className = 'place-data';
     const category = document.createElement('span');
     category.className = 'place-category';
-    category.textContent = labels[place.category];
+    category.textContent = `${labels[place.category]}${!place.demo && !place.published ? ' · BOZZA' : ''}`;
     const name = document.createElement('span');
     name.className = 'place-name';
     name.textContent = place.title;
@@ -211,12 +213,13 @@
     state.selectedId = id;
     renderList();
     renderMarkers();
-    $('detailCategory').textContent = labels[place.category].toLocaleUpperCase('it-IT');
+    $('detailCategory').textContent = `${labels[place.category].toLocaleUpperCase('it-IT')}${!place.demo && !place.published ? ' · BOZZA' : ''}`;
     $('detailDate').textContent = formatDate(place.visited_at);
     $('detailTitle').textContent = place.title;
     $('detailArea').textContent = place.area;
     $('detailDescription').textContent = place.description;
     $('detailCoords').textContent = `${place.lat.toFixed(5)}° N, ${place.lon.toFixed(5)}° E`;
+    $('editPlaceButton').hidden = !(window.atlasAuth?.editor && !place.demo);
     const strip = $('photoStrip');
     strip.replaceChildren();
     place.photos.forEach((url, i) => {
@@ -280,18 +283,163 @@
     }, () => showToast('Posizione non disponibile o autorizzazione negata.'), { enableHighAccuracy: false, timeout: 12000 });
   }
 
-  async function loadPlaces() {
+  function formMessage(message, error = false) {
+    const node = $('waypointFormStatus');
+    node.textContent = message;
+    node.classList.toggle('is-error', error);
+  }
+
+  function imageLink(path) {
+    if (/^https?:\/\//i.test(path)) return safeImage(path);
+    return safeImage(supabase.storage.from(config.supabase.photoBucket).getPublicUrl(path).data.publicUrl);
+  }
+
+  function renderExistingPhotos() {
+    const list = $('waypointExistingPhotos');
+    list.replaceChildren();
+    state.retainedPhotos.forEach((path, i) => {
+      const url = imageLink(path);
+      if (!url) return;
+      const wrapper = document.createElement('span');
+      wrapper.className = 'waypoint-existing-photo';
+      const img = document.createElement('img');
+      img.src = url;
+      img.alt = `Fotografia ${i + 1}`;
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.title = 'Rimuovi la fotografia dal waypoint';
+      remove.setAttribute('aria-label', `Rimuovi foto ${i + 1}`);
+      remove.textContent = '×';
+      remove.addEventListener('click', () => { state.retainedPhotos.splice(i, 1); renderExistingPhotos(); });
+      wrapper.append(img, remove);
+      list.append(wrapper);
+    });
+  }
+
+  function openWaypointEditor(id = null) {
+    if (!window.atlasAuth?.editor) { window.atlasAuth?.open(); return; }
+    const place = state.all.find(item => item.id === id && !item.demo);
+    state.editingId = place?.id || null;
+    state.retainedPhotos = place ? place.photoPaths.slice() : [];
+    $('waypointForm').reset();
+    $('waypointDialogTitle').innerHTML = place ? 'Modifica <em>luogo.</em>' : 'Nuovo <em>luogo.</em>';
+    $('waypointTitle').value = place?.title || '';
+    $('waypointArea').value = place?.area || '';
+    $('waypointCategory').value = place?.category || 'natura';
+    $('waypointLat').value = place?.lat ?? map.getCenter().lat.toFixed(6);
+    $('waypointLon').value = place?.lon ?? map.getCenter().lng.toFixed(6);
+    $('waypointVisited').value = place?.visited_at || '';
+    $('waypointDescription').value = place?.description === 'Nessuna descrizione disponibile.' ? '' : place?.description || '';
+    $('waypointPublished').checked = place?.published || false;
+    $('waypointDelete').hidden = !place;
+    formMessage('');
+    renderExistingPhotos();
+    $('waypointDialog').showModal();
+    $('waypointTitle').focus();
+  }
+
+  function pickPointOnMap() {
+    if (state.picking || state.saving) return;
+    state.picking = true;
+    $('waypointDialog').close();
+    const banner = document.createElement('div');
+    banner.className = 'waypoint-pick-banner';
+    banner.textContent = 'Fai clic sulla mappa per posizionare il waypoint';
+    document.querySelector('.map-area').append(banner);
+    map.getContainer().style.cursor = 'crosshair';
+    map.once('click', event => {
+      $('waypointLat').value = event.latlng.lat.toFixed(6);
+      $('waypointLon').value = event.latlng.lng.toFixed(6);
+      banner.remove();
+      map.getContainer().style.cursor = '';
+      state.picking = false;
+      $('waypointDialog').showModal();
+      formMessage('Coordinate selezionate dalla mappa.');
+    });
+  }
+
+  async function saveWaypoint(event) {
+    event.preventDefault();
+    if (!window.atlasAuth?.editor || !supabase || state.saving) return;
+    const lat = Number($('waypointLat').value);
+    const lon = Number($('waypointLon').value);
+    if (!$('waypointTitle').value.trim() || !Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) {
+      formMessage('Compila il nome e le coordinate valide.', true); return;
+    }
+    const files = Array.from($('waypointPhotos').files || []);
+    if (files.some(file => !['image/jpeg', 'image/png', 'image/webp', 'image/avif'].includes(file.type) || file.size > 10000000)) {
+      formMessage('Usa JPG, PNG, WebP o AVIF, massimo 10 MB a fotografia.', true); return;
+    }
+    state.saving = true;
+    $('waypointSave').disabled = true;
+    $('waypointDelete').disabled = true;
+    try {
+      const id = state.editingId || crypto.randomUUID();
+      const photos = state.retainedPhotos.slice();
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        formMessage(`Caricamento fotografia ${i + 1} di ${files.length}…`);
+        const extension = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/avif': 'avif' }[file.type];
+        const path = `${window.atlasAuth.user.id}/waypoints/${id}/${crypto.randomUUID()}.${extension}`;
+        const { error } = await supabase.storage.from(config.supabase.photoBucket).upload(path, file, { contentType: file.type, upsert: false });
+        if (error) throw error;
+        photos.push(path);
+      }
+      formMessage('Salvataggio nel database…');
+      const payload = {
+        id, owner_id: window.atlasAuth.user.id,
+        title: $('waypointTitle').value.trim(), area: $('waypointArea').value.trim(),
+        category: $('waypointCategory').value, lat, lon,
+        visited_at: $('waypointVisited').value || null,
+        description: $('waypointDescription').value.trim(), photos,
+        published: $('waypointPublished').checked
+      };
+      const { error } = await supabase.from(config.supabase.table).upsert(payload, { onConflict: 'id' });
+      if (error) throw error;
+      $('waypointDialog').close();
+      showToast(payload.published ? 'Waypoint pubblicato con successo.' : 'Waypoint salvato come bozza privata.');
+      await loadPlaces(false);
+      if (state.visible.some(place => place.id === id)) openPlace(id);
+    } catch (error) {
+      console.error('Salvataggio waypoint:', error);
+      formMessage(`Non è stato possibile salvare: ${error.message || 'errore sconosciuto'}.`, true);
+    } finally {
+      state.saving = false;
+      $('waypointSave').disabled = false;
+      $('waypointDelete').disabled = false;
+    }
+  }
+
+  async function deleteWaypoint() {
+    if (!state.editingId || !window.atlasAuth?.editor || state.saving) return;
+    if (!confirm('Eliminare definitivamente questo waypoint? Le fotografie già caricate nello Storage non saranno cancellate.')) return;
+    state.saving = true;
+    try {
+      const { error } = await supabase.from(config.supabase.table).delete().eq('id', state.editingId);
+      if (error) throw error;
+      $('waypointDialog').close();
+      closePlace();
+      await loadPlaces(false);
+      showToast('Waypoint eliminato.');
+    } catch (error) { formMessage(`Eliminazione non riuscita: ${error.message}`, true); }
+    finally { state.saving = false; }
+  }
+
+  async function loadPlaces(firstLoad = true) {
     const settings = config.supabase;
     if (settings.url && settings.anonKey) {
       try {
-        const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
-        supabase = createClient(settings.url, settings.anonKey);
-        const { data, error } = await supabase.from(settings.table).select('id,title,area,category,lat,lon,visited_at,description,photos,published').eq('published', true).order('visited_at', { ascending: false });
+        await window.atlasAuth?.ready;
+        supabase = window.atlasAuth?.client;
+        if (!supabase) throw new Error('Client Supabase non disponibile');
+        let query = supabase.from(settings.table).select('id,title,area,category,lat,lon,visited_at,description,photos,published').order('visited_at', { ascending: false });
+        if (!window.atlasAuth?.editor) query = query.eq('published', true);
+        const { data, error } = await query;
         if (error) throw error;
-        if (data?.length) {
-          state.demo = false;
-          state.all = data.map(row => toWaypoint(row)).filter(Boolean);
-          $('dataStatus').textContent = 'Dati pubblicati su Supabase';
+        state.demo = !data?.length && !window.atlasAuth?.editor;
+        state.all = (data || []).map(row => toWaypoint(row)).filter(Boolean);
+        if (!state.demo) {
+          $('dataStatus').textContent = window.atlasAuth?.editor ? 'Area editor · bozze e pubblicati' : 'Dati pubblicati su Supabase';
           document.querySelector('.data-state').classList.add('connected');
         } else {
           $('dataStatus').textContent = 'Atlante in preparazione · luoghi dimostrativi';
@@ -317,11 +465,13 @@
     $('totalCount').textContent = String(state.all.length).padStart(2, '0');
     $('photoCount').textContent = String(state.all.reduce((total, place) => total + place.photos.length, 0)).padStart(2, '0');
     filterPlaces();
-    const linkedWaypoint = new URLSearchParams(window.location.search).get('waypoint');
-    setTimeout(() => {
-      if (linkedWaypoint && state.visible.some(place => place.id === linkedWaypoint)) openPlace(linkedWaypoint);
-      else fitAll();
-    }, 300);
+    if (firstLoad) {
+      const linkedWaypoint = new URLSearchParams(window.location.search).get('waypoint');
+      setTimeout(() => {
+        if (linkedWaypoint && state.visible.some(place => place.id === linkedWaypoint)) openPlace(linkedWaypoint);
+        else fitAll();
+      }, 300);
+    }
   }
 
   function bindActions() {
@@ -352,10 +502,13 @@
     });
     $('exportButton').addEventListener('click', downloadGeoJSON);
     $('aboutButton').addEventListener('click', () => $('infoDialog').showModal());
-    $('addButton').addEventListener('click', () => {
-      if (window.atlasAuth?.editor) $('infoDialog').showModal();
-      else window.atlasAuth?.open();
-    });
+    $('addButton').addEventListener('click', () => openWaypointEditor());
+    $('editPlaceButton').addEventListener('click', () => openWaypointEditor(state.selectedId));
+    $('closeWaypointDialog').addEventListener('click', () => $('waypointDialog').close());
+    $('waypointPickMap').addEventListener('click', pickPointOnMap);
+    $('waypointForm').addEventListener('submit', event => void saveWaypoint(event));
+    $('waypointDelete').addEventListener('click', () => void deleteWaypoint());
+    window.addEventListener('atlas-auth-changed', () => { if (supabase) void loadPlaces(false); });
     document.addEventListener('keydown', event => { if (event.key === 'Escape' && state.selectedId) closePlace(); });
   }
 

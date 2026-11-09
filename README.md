@@ -1,17 +1,21 @@
 # Atlante — diario geografico personale
 
-Un sito statico pensato per GitHub Pages: **Leaflet + OpenStreetMap + vista satellite**, elenco di waypoint, fotografie, ricerca, filtri, coordinate ed esportazione GeoJSON. È già predisposto alla lettura da **Supabase**. Comprende anche lo **studio Geostorie** per comporre racconti geografici multimediali.
+Un sito statico pensato per GitHub Pages: **Leaflet + OpenStreetMap + vista satellite**, elenco di waypoint, fotografie, ricerca, filtri, coordinate ed esportazione GeoJSON. È collegato al progetto **Supabase `atlante-enrico`** per l'archivio cloud. Comprende lo **studio Geostorie** per comporre racconti geografici multimediali.
 
 ## Geostorie (`dist/storie/`)
 
-L'editor è accessibile dalla voce **Geostorie** dell'Atlante dopo il login di un account autorizzato. Puoi:
+L'editor è accessibile dalla voce **Geostorie** dell'Atlante dopo il login di un account autorizzato. Le geostorie pubblicate sono consultabili da tutti. Come editor puoi:
 
-- Creare e gestire più bozze, duplicarle o eliminarle con conferma;
+- Creare e gestire più bozze su Supabase, pubblicarle, duplicarle o eliminarle con conferma;
 - Aggiungere titoli, paragrafi, waypoint collegati all'Atlante, fotografie, video YouTube e mini-mappe Leaflet (OSM o satellite), cambiandone l'ordine;
-- Inserire foto tramite URL o caricamento dal computer. Le immagini locali vengono ridimensionate e conservate nella bozza;
+- Inserire foto tramite URL o caricamento dal computer. Le immagini locali vengono ridimensionate e caricate nel bucket Supabase Storage;
 - Passare da modifica ad anteprima, importare ed esportare storie in **JSON**, incluse le foto incorporate.
 
-**Importante:** il login protegge l'interfaccia, ma **le bozze dell'editor attuale sono ancora salvate nell'IndexedDB del browser**. Non sono sincronizzate fra PC. Usa **Esporta** per una copia di sicurezza. Il pulsante «Aggiungi luogo» nella mappa è predisposto all'autenticazione; il modulo di inserimento verrà collegato nel passo successivo.
+Le nuove geostorie si salvano automaticamente nel cloud e sono disponibili su altri dispositivi dopo il login. Una copia locale di emergenza viene conservata quando possibile. Le bozze create **prima** dell'integrazione non vengono migrate automaticamente: usa il pulsante **Da browser** sull'apparecchio originale. Gli originali locali restano intatti; vengono importate nel cloud come bozze. Puoi anche importare un JSON esportato in precedenza.
+
+Sulla mappa, l'account editor può aggiungere, modificare e cancellare waypoint, selezionare le coordinate con un clic, caricare fotografie, scegliere categoria e data di visita e decidere se rendere visibile ogni luogo al pubblico. I visitatori vedono solo i waypoint pubblicati.
+
+**Nota privacy foto:** il bucket Storage usa URL pubblici per mostrare le immagini. Una fotografia presente in una bozza non viene mostrata nella mappa o nelle geostorie pubbliche, ma chi conoscesse il suo URL potrebbe comunque aprirla. Non caricare immagini riservate.
 
 Il progetto Supabase `atlante-enrico` dispone già delle tabelle `waypoints`, `geostories`, `geostory_waypoints`, `atlas_editors` e del bucket `waypoint-photos`. **Non rieseguire gli script SQL iniziali**, già applicati.
 
@@ -44,7 +48,7 @@ Prima di inviare email di conferma e recupero password, in **Supabase → Authen
 
 Le policy per consentire agli editor autorizzati le modifiche sono in `supabase/enable_editor_access.sql`, **già applicato** al progetto.
 
-Per ora il sito legge i waypoint pubblicati e offre il login. Il **salvataggio remoto di nuovi waypoint, geostorie e fotografie** sarà il prossimo passo; le bozze esistenti restano locali.
+Waypoint, geostorie e fotografie sono ora gestiti con il client Supabase autenticato. Gli ID delle geostorie possono collegarsi ai waypoint tramite `geostory_waypoints`. Solo gli utenti registrati in `public.atlas_editors` possono scrivere, grazie alle policy RLS già presenti.
 
 ### Colonne attese
 
@@ -75,7 +79,8 @@ dist/
   index.html            Interfaccia Leaflet
   styles.css            Layout e responsive
   auth.css / auth.js     Login e stato dell'editor
-  app.js                Ricerca, filtri, marker, dettagli e Supabase (lettura)
+  atlas-editor.css      Modulo per creare e modificare waypoint
+  app.js                Ricerca, filtri, marker, dettagli e gestione waypoint Supabase
   config.js             Configurazione sfondi e Supabase
   data/waypoints.json   Esempi dimostrativi
   storie/               Studio Geostorie (HTML, CSS, JS)

@@ -12,11 +12,11 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="../styles.css" />
     <link rel="stylesheet" href="../auth.css" />
-    <link rel="stylesheet" href="./stories.css?v=20261108-scroll" />
+    <link rel="stylesheet" href="./stories.css?v=20261109-cloud" />
     <script defer src="../config.js"></script>
     <script defer src="../auth.js?v=20261109-login2"></script>
     <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-    <script defer src="./stories.js?v=20261108-youtube"></script>
+    <script defer src="./stories.js?v=20261109-cloud"></script>
   </head>
   <body class="story-body">
     <div class="story-app" id="storyApp">
@@ -44,7 +44,7 @@
         </div>
         <div class="story-local-note">
           <span class="local-pulse"></span>
-          <div><strong>Bozze salvate nel browser</strong><small>Per ora non sono pubblicate online.</small></div>
+          <div><strong>Archivio sincronizzato</strong><small>Bozze private e racconti pubblicati.</small></div>
           <button id="helpButton" type="button" aria-label="Informazioni sul salvataggio" title="Informazioni">?</button>
         </div>
       </aside>
@@ -54,6 +54,8 @@
           <div class="story-breadcrumb"><span>GEOSTORIE</span><span class="breadcrumb-divider">/</span><strong id="toolbarStoryTitle">Il mio racconto</strong></div>
           <div class="story-toolbar-actions">
             <span class="save-indicator" id="saveIndicator"><span class="save-light"></span> Caricamento…</span>
+            <button class="toolbar-button story-publish-button" type="button" id="publishStoryButton" aria-pressed="false">○ Bozza privata</button>
+            <button class="toolbar-button hide-small" type="button" id="importLocalButton" title="Importa le vecchie bozze locali" hidden>Da browser</button>
             <button class="toolbar-button hide-small" type="button" id="importButton" title="Importa una geostoria JSON"><svg viewBox="0 0 24 24" fill="none"><path d="M12 16V3m0 0L8 7m4-4 4 4M4 17v4h16v-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg> Importa</button>
             <button class="toolbar-button hide-small" type="button" id="exportButton" title="Esporta la bozza come JSON"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3v13m0 0-4-4m4 4 4-4M4 17v4h16v-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg> Esporta</button>
             <button class="toolbar-button" type="button" id="duplicateButton" title="Duplica la geostoria">Duplica</button>
@@ -128,9 +130,9 @@
     <dialog class="story-dialog" id="helpDialog" aria-labelledby="helpTitle">
       <form method="dialog"><button class="dialog-close" aria-label="Chiudi">×</button></form>
       <span class="dialog-kicker">UNA NOTA SUL SALVATAGGIO</span>
-      <h2 id="helpTitle">Bozze locali,<br /><em>idee senza limiti.</em></h2>
-      <p>Le geostorie si salvano automaticamente nella memoria di questo browser (IndexedDB), incluse le fotografie che scegli dal computer. Non sono pubbliche e non vengono inviate a server.</p>
-      <p>Per avere una copia indipendente dal browser, usa <strong>Esporta</strong>. Quando integreremo Supabase, aggiungeremo il login e la pubblicazione delle geostorie.</p>
+      <h2 id="helpTitle">Le tue storie,<br /><em>ovunque tu sia.</em></h2>
+      <p>Le geostorie vengono salvate automaticamente su Supabase. Solo il tuo account editor può modificarle; gli altri vedono esclusivamente le storie pubblicate.</p>
+      <p>Per sicurezza puoi sempre usare <strong>Esporta</strong> per salvare una copia JSON. Se hai bozze create prima del collegamento cloud, usa <strong>Da browser</strong> per importarle senza cancellare gli originali locali.</p>
       <form method="dialog"><button class="dialog-action">Continua a scrivere</button></form>
     </dialog>
   </body>

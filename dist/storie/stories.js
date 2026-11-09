@@ -6,11 +6,14 @@
   const TYPES = ['heading', 'paragraph', 'waypoint', 'image', 'video', 'map'];
   const TYPE_NAMES = { heading: 'Titolo', paragraph: 'Testo', waypoint: 'Waypoint', image: 'Fotografia', video: 'Video YouTube', map: 'Mini-mappa' };
   const TYPE_ICONS = { heading: 'T', paragraph: '≡', waypoint: '⌖', image: '▧', video: '▶', map: '◇' };
-  const state = { stories: [], current: null, waypoints: [], preview: false, maps: [], saveTimer: null, dirty: false, revision: 0, pendingImageId: null, storageError: false };
+  const state = { stories: [], current: null, waypoints: [], localStories: [], preview: false, maps: [], saveTimer: null, savingPromise: null, dirty: false, revision: 0, pendingImageId: null, storageError: false };
   let editorInitialized = false;
   let authChecked = false;
   let dbPromise;
   let toastTimer;
+  const client = () => window.atlasAuth?.client;
+  const isEditor = () => Boolean(window.atlasAuth?.editor && window.atlasAuth?.user && client());
+  const isUUID = value => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ''));
 
   const uid = () => globalThis.crypto?.randomUUID?.() || `story-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const clone = value => structuredClone(value);
@@ -91,7 +94,7 @@
 
   function blankStory() {
     const now = new Date().toISOString();
-    return { id: uid(), title: 'Una nuova geostoria', subtitle: '', kicker: 'DIARIO DI VIAGGIO', cover: '', created_at: now, updated_at: now, blocks: [{ id: uid(), type: 'paragraph', text: '' }] };
+    return { id: uid(), title: 'Una nuova geostoria', subtitle: '', kicker: 'DIARIO DI VIAGGIO', cover: '', published: false, created_at: now, updated_at: now, blocks: [{ id: uid(), type: 'paragraph', text: '' }] };
   }
 
   function exampleStory() {
@@ -115,15 +118,18 @@
     const sb = config.supabase || {};
     if (sb.url && sb.anonKey) {
       try {
-        const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
-        const client = createClient(sb.url, sb.anonKey);
-        const { data, error } = await client.from(sb.table || 'waypoints').select('id,title,area,lat,lon,photos,published').eq('published', true).order('visited_at', { ascending: false });
+        const api = client();
+        if (!api) throw new Error('Connessione Supabase non disponibile');
+        let query = api.from(sb.table || 'waypoints').select('id,title,area,lat,lon,photos,published').order('visited_at', { ascending: false });
+        if (!isEditor()) query = query.eq('published', true);
+        const { data, error } = await query;
         if (error) throw error;
         state.waypoints = (data || []).map(row => ({
           ...row,
-          photos: (Array.isArray(row.photos) ? row.photos : []).map(src => /^https?:\/\//i.test(src) ? imageUrl(src) : imageUrl(client.storage.from(sb.photoBucket || 'waypoint-photos').getPublicUrl(src).data.publicUrl)).filter(Boolean)
+          photos: (Array.isArray(row.photos) ? row.photos : []).map(src => /^https?:\/\//i.test(src) ? imageUrl(src) : imageUrl(api.storage.from(sb.photoBucket || 'waypoint-photos').getPublicUrl(src).data.publicUrl)).filter(Boolean)
         }));
-        return;
+        if (!state.waypoints.length && isEditor()) return;
+        if (state.waypoints.length) return;
       } catch (error) { console.warn('Supabase waypoint non disponibili; uso gli esempi.', error); }
     }
     try {
@@ -136,32 +142,82 @@
   function statusFromError(error) {
     console.error(error);
     state.storageError = true;
-    setSaveStatus('Salvataggio non disponibile', true);
-    notice('Impossibile salvare in questo browser. Esporta una copia JSON.');
+    setSaveStatus('Non sincronizzato · riprova', false);
+    notice(`Non riesco a salvare su Supabase: ${error.message || error}. Esporta un JSON per sicurezza.`);
+  }
+
+  async function syncStoryWaypoints(story) {
+    const api = client();
+    const ids = [];
+    story.blocks.forEach(block => {
+      if (block.type === 'waypoint' && isUUID(block.waypointId) && state.waypoints.some(point => point.id === block.waypointId) && !ids.includes(block.waypointId)) ids.push(block.waypointId);
+    });
+    const { data: previous, error: lookupError } = await api.from('geostory_waypoints').select('waypoint_id,position').eq('geostory_id', story.id);
+    if (lookupError) throw lookupError;
+    const unchanged = (previous || []).length === ids.length && (previous || []).every(row => ids[row.position] === row.waypoint_id);
+    if (unchanged) return;
+    if (previous?.length) {
+      const { error } = await api.from('geostory_waypoints').delete().eq('geostory_id', story.id);
+      if (error) throw error;
+    }
+    if (ids.length) {
+      const { error } = await api.from('geostory_waypoints').insert(ids.map((waypoint_id, position) => ({ geostory_id: story.id, waypoint_id, position })));
+      if (error) throw error;
+    }
+  }
+
+  async function persistStory(story) {
+    if (!isEditor()) throw new Error('Accesso editor necessario.');
+    const payload = {
+      id: story.id, owner_id: window.atlasAuth.user.id,
+      slug: `storia-${story.id}`,
+      title: story.title.trim() || 'Senza titolo',
+      subtitle: story.subtitle || '', kicker: story.kicker || '', cover: story.cover || '',
+      blocks: story.blocks, published: Boolean(story.published)
+    };
+    const { error } = await client().from('geostories').upsert(payload, { onConflict: 'id' });
+    if (error) throw error;
+    await syncStoryWaypoints(story);
   }
 
   async function saveNow() {
     clearTimeout(state.saveTimer);
     state.saveTimer = null;
-    if (!state.current || !state.dirty) return;
+    if (state.savingPromise) {
+      await state.savingPromise;
+      if (state.current?.id && state.dirty) return saveNow();
+      return true;
+    }
+    if (!state.current || !state.dirty) return true;
+    if (!isEditor()) return false;
     const story = clone(state.current);
     const capturedRevision = state.revision;
     story.updated_at = new Date().toISOString();
-    try {
-      await putStory(story);
-      state.current.updated_at = story.updated_at;
-      const idx = state.stories.findIndex(item => item.id === story.id);
-      if (idx >= 0) state.stories[idx] = clone(story);
-      else state.stories.push(clone(story));
-      state.dirty = capturedRevision !== state.revision;
-      if (state.dirty) {
-        setSaveStatus('Salvataggio in corso…', true);
-        clearTimeout(state.saveTimer);
-        state.saveTimer = setTimeout(() => void saveNow(), 250);
-      } else setSaveStatus('Salvato in questo browser');
-      renderLibrary();
-      $('storyUpdatedAt').textContent = `Aggiornato ${dateLabel(story.updated_at)}`;
-    } catch (error) { statusFromError(error); }
+    state.savingPromise = (async () => {
+      try {
+        // A backup in IndexedDB protects edits in case the connection drops.
+        await putStory(story).catch(error => console.warn('Backup locale non disponibile:', error));
+        await persistStory(story);
+        if (state.current?.id === story.id) state.current.updated_at = story.updated_at;
+        const idx = state.stories.findIndex(item => item.id === story.id);
+        if (idx >= 0) state.stories[idx] = clone(story);
+        else state.stories.push(clone(story));
+        state.dirty = capturedRevision !== state.revision;
+        if (state.dirty) {
+          setSaveStatus('Nuove modifiche da salvare…', true);
+        } else setSaveStatus('Salvato su Supabase ✓');
+        renderLibrary();
+        $('storyUpdatedAt').textContent = `Aggiornato ${dateLabel(story.updated_at)}`;
+        return true;
+      } catch (error) { statusFromError(error); return false; }
+    })();
+    let result;
+    try { result = await state.savingPromise; }
+    finally { state.savingPromise = null; }
+    if (result && state.dirty) {
+      state.saveTimer = setTimeout(() => void saveNow(), 220);
+    }
+    return result;
   }
 
   function queueSave() {
@@ -190,7 +246,7 @@
       const title = document.createElement('strong');
       title.textContent = story.title || 'Senza titolo';
       const date = document.createElement('small');
-      date.textContent = `${story.blocks.length} blocchi · ${dateLabel(story.updated_at)}`;
+      date.textContent = `${story.blocks.length} blocchi · ${story.published ? 'PUBBLICATA' : 'BOZZA'} · ${dateLabel(story.updated_at)}`;
       const arrow = document.createElement('span');
       arrow.className = 'draft-chevron';
       arrow.textContent = '›';
@@ -202,21 +258,21 @@
   }
 
   async function selectStory(id) {
-    await saveNow();
+    if (!(await saveNow())) return;
     const story = state.stories.find(item => item.id === id);
     if (!story) return;
     state.current = clone(story);
-    state.preview = false;
+    state.preview = !isEditor();
     renderStory();
     renderLibrary();
     $('storyStage').scrollTop = 0;
-    setSaveStatus('Salvato in questo browser');
+    setSaveStatus(isEditor() ? 'Salvato su Supabase ✓' : 'Geostoria pubblicata');
   }
 
   async function createStory() {
-    await saveNow();
+    if (!(await saveNow())) return;
     const story = blankStory();
-    try { await putStory(story); }
+    try { await persistStory(story); }
     catch (error) { statusFromError(error); return; }
     state.stories.push(clone(story));
     await selectStory(story.id);
@@ -225,13 +281,14 @@
   }
 
   async function duplicateCurrent() {
-    await saveNow();
+    if (!(await saveNow())) return;
     const story = clone(state.current);
     story.id = uid();
     story.title = `${story.title} (copia)`;
+    story.published = false;
     story.blocks = story.blocks.map(block => ({ ...block, id: uid() }));
     story.created_at = story.updated_at = new Date().toISOString();
-    try { await putStory(story); }
+    try { await persistStory(story); }
     catch (error) { statusFromError(error); return; }
     state.stories.push(clone(story));
     await selectStory(story.id);
@@ -240,19 +297,21 @@
 
   async function deleteCurrent() {
     if (!state.current) return;
-    if (!confirm(`Eliminare definitivamente la bozza “${state.current.title}” da questo browser? Esporta prima un JSON se vuoi conservarla.`)) return;
-    await saveNow();
+    if (!confirm(`Eliminare definitivamente da Supabase la geostoria “${state.current.title}”? Esporta prima un JSON se vuoi conservarla.`)) return;
+    if (!(await saveNow())) return;
     const id = state.current.id;
-    try { await deleteStory(id); }
+    try {
+      const { error: linksError } = await client().from('geostory_waypoints').delete().eq('geostory_id', id);
+      if (linksError) throw linksError;
+      const { error } = await client().from('geostories').delete().eq('id', id);
+      if (error) throw error;
+      await deleteStory(id).catch(localError => console.warn('Backup locale non eliminato:', localError));
+    }
     catch (error) { statusFromError(error); return; }
     state.stories = state.stories.filter(story => story.id !== id);
-    if (!state.stories.length) {
-      const fresh = blankStory();
-      await putStory(fresh);
-      state.stories.push(clone(fresh));
-    }
-    await selectStory(state.stories[0].id);
-    notice('Bozza eliminata dal browser.');
+    if (state.stories.length) await selectStory(state.stories[0].id);
+    else { state.current = null; renderLibrary(); showEmptyStories(true); }
+    notice('Geostoria eliminata da Supabase.');
   }
 
   function resizeTextarea(element) {
@@ -272,10 +331,16 @@
     const cover = imageUrl(story.cover);
     $('storyCover').style.backgroundImage = cover ? `url(${JSON.stringify(cover)})` : '';
     $('coverUrl').value = /^https?:\/\//.test(story.cover || '') ? story.cover : '';
+    const publish = $('publishStoryButton');
+    publish.textContent = story.published ? '● Pubblicata' : '○ Bozza privata';
+    publish.setAttribute('aria-pressed', String(Boolean(story.published)));
+    publish.classList.toggle('is-published', Boolean(story.published));
   }
 
   function renderStory() {
     const preview = state.preview;
+    $('storyDocument').hidden = false;
+    $('storyStage').querySelector('.story-access-gate')?.remove();
     $('storyApp').classList.toggle('is-preview', preview);
     $('previewButton').setAttribute('aria-pressed', String(preview));
     $('previewIcon').textContent = preview ? '✎' : '◉';
@@ -507,7 +572,7 @@
           button.textContent = '▧  Scegli foto dal computer';
           button.addEventListener('click', () => { state.pendingImageId = block.id; $('blockImageInput').click(); });
           const hint = document.createElement('small');
-          hint.textContent = 'La foto resta nella bozza locale.';
+          hint.textContent = 'La foto verrà caricata su Supabase Storage.';
           row.append(button, hint);
           content.append(row);
         }
@@ -686,12 +751,24 @@
     return canvas.toDataURL('image/jpeg', .85);
   }
 
+  async function uploadImageData(src, storyId) {
+    if (!isEditor()) throw new Error('Effettua l’accesso come editor per caricare le foto.');
+    const blob = await (await fetch(src)).blob();
+    if (blob.size > 10000000) throw new Error('Foto troppo grande per lo Storage (10 MB).');
+    const path = `${window.atlasAuth.user.id}/geostories/${storyId}/${uid()}.jpg`;
+    const { error } = await client().storage.from(config.supabase.photoBucket).upload(path, blob, { contentType: 'image/jpeg', upsert: false });
+    if (error) throw error;
+    return client().storage.from(config.supabase.photoBucket).getPublicUrl(path).data.publicUrl;
+  }
+
   async function uploadLocalImage(file, blockId = null) {
     if (!file) return;
     const activeStoryId = state.current?.id;
     try {
       setSaveStatus('Elaboro la fotografia…', true);
-      const src = await imageToDataUrl(file);
+      const dataUrl = await imageToDataUrl(file);
+      setSaveStatus('Caricamento fotografia nel cloud…', true);
+      const src = await uploadImageData(dataUrl, activeStoryId);
       if (activeStoryId !== state.current?.id) return;
       if (blockId) {
         const block = state.current.blocks.find(item => item.id === blockId);
@@ -704,7 +781,7 @@
       }
       queueSave();
       await saveNow();
-      notice('Fotografia salvata nella bozza locale.');
+      notice('Fotografia caricata su Supabase.');
     } catch (error) { console.error(error); notice(error.message || 'Impossibile elaborare la foto.'); }
   }
 
@@ -720,7 +797,7 @@
     link.click();
     link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1500);
-    notice('Geostoria esportata con tutte le foto locali.');
+    notice('Geostoria esportata in JSON. Le foto online sono collegate tramite URL.');
   }
 
   function normalizedStory(raw) {
@@ -755,18 +832,74 @@
       const object = JSON.parse(await file.text());
       if (object.format !== 'atlante-geostoria' || object.version !== 1) throw new Error('Esporta il file dal formato Geostorie v1.');
       const story = normalizedStory(object.story);
-      await saveNow();
-      await putStory(story);
+      if (!(await saveNow())) return;
+      await moveEmbeddedImagesToStorage(story);
+      await persistStory(story);
       state.stories.push(clone(story));
       await selectStory(story.id);
-      notice('Geostoria importata nell’archivio locale.');
+      notice('Geostoria importata su Supabase come bozza.');
     } catch (error) { console.error(error); notice(`Importazione non riuscita: ${error.message}`); }
+  }
+
+  async function moveEmbeddedImagesToStorage(story) {
+    if (String(story.cover || '').startsWith('data:image/')) story.cover = await uploadImageData(story.cover, story.id);
+    for (const block of story.blocks) {
+      if (block.type === 'image' && String(block.src || '').startsWith('data:image/')) {
+        block.src = await uploadImageData(block.src, story.id);
+      }
+    }
+  }
+
+  async function importLocalStories() {
+    if (!isEditor()) return;
+    const imported = JSON.parse(localStorage.getItem('atlante-imported-local-stories') || '[]');
+    const candidates = state.localStories.filter(story => !imported.includes(story.id) && !state.stories.some(cloud => cloud.id === story.id));
+    if (!candidates.length) { notice('Non ci sono nuove bozze locali da importare.'); return; }
+    if (!confirm(`Importare ${candidates.length} geostorie da questo browser su Supabase? Le copie locali non saranno eliminate e le storie importate resteranno bozze.`)) return;
+    if (!(await saveNow())) return;
+    let completed = 0;
+    for (const source of candidates) {
+      try {
+        setSaveStatus(`Importazione ${completed + 1}/${candidates.length}…`, true);
+        const story = normalizedStory(source);
+        story.title = asText(source.title, 180);
+        story.published = false;
+        await moveEmbeddedImagesToStorage(story);
+        await persistStory(story);
+        state.stories.push(clone(story));
+        imported.push(source.id);
+        localStorage.setItem('atlante-imported-local-stories', JSON.stringify(imported));
+        completed += 1;
+      } catch (error) { console.error('Importazione bozza:', error); notice(`Importazione interrotta dopo ${completed} storie: ${error.message}`); break; }
+    }
+    $('importLocalButton').hidden = !state.localStories.some(story => !imported.includes(story.id) && !state.stories.some(cloud => cloud.id === story.id));
+    renderLibrary();
+    if (completed) { await selectStory(state.stories[state.stories.length - 1].id); notice(`${completed} geostorie importate. Le bozze originali sono ancora in questo browser.`); }
   }
 
   function bindEvents() {
     $('newStoryButton').addEventListener('click', () => void createStory());
     $('duplicateButton').addEventListener('click', () => void duplicateCurrent());
     $('deleteStoryButton').addEventListener('click', () => void deleteCurrent());
+    $('publishStoryButton').addEventListener('click', async () => {
+      if (!isEditor() || !state.current) return;
+      if (!(await saveNow())) return;
+      const original = Boolean(state.current.published);
+      if (!original && state.current.blocks.some(block => block.type === 'waypoint' && state.waypoints.some(point => point.id === block.waypointId && !point.published))) {
+        notice('Per pubblicare la storia, pubblica prima i waypoint che contiene.');
+        return;
+      }
+      state.current.published = !original;
+      queueSave();
+      renderHeading();
+      const saved = await saveNow();
+      if (!saved) {
+        state.current.published = original;
+        queueSave();
+        renderHeading();
+      } else notice(state.current.published ? 'Geostoria pubblicata: ora è visibile ai visitatori.' : 'Geostoria riportata a bozza privata.');
+    });
+    $('importLocalButton').addEventListener('click', () => void importLocalStories());
     $('previewButton').addEventListener('click', async () => { await saveNow(); state.preview = !state.preview; renderStory(); $('storyStage').scrollTop = 0; });
     $('blockPicker').addEventListener('click', event => {
       const button = event.target.closest('[data-add]');
@@ -803,57 +936,64 @@
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && state.dirty) void saveNow(); });
   }
 
-  function showAccessGate() {
-    $('newStoryButton').hidden = true;
-    document.querySelector('.story-toolbar-actions').hidden = true;
-    document.querySelector('.story-local-note').hidden = true;
-    $('storyCount').textContent = '—';
-    $('storyList').replaceChildren();
-    const note = document.createElement('p');
-    note.className = 'draft-loading';
-    note.textContent = 'Le geostorie pubblicate compariranno qui. L’editor è riservato al proprietario.';
-    $('storyList').append(note);
-    document.querySelector('.story-tools').hidden = true;
+  function showEmptyStories(editor) {
     const stage = $('storyStage');
-    stage.replaceChildren();
+    $('storyDocument').hidden = true;
+    stage.querySelector('.story-access-gate')?.remove();
     const gate = document.createElement('section');
     gate.className = 'story-access-gate';
-    gate.innerHTML = `<div class="story-access-spark" aria-hidden="true">✳</div>
-      <h2>Storie da vivere,<br><em>luoghi da raccontare.</em></h2>
-      <p id="storyGateDescription"></p>
-      <button type="button">Accesso all’editor</button>`;
-    gate.querySelector('#storyGateDescription').textContent = window.atlasAuth?.user
-      ? 'Account autenticato. Per modificare le geostorie serve anche l’abilitazione del proprietario.'
-      : 'L’Atlante è pubblico, ma l’editor delle geostorie è riservato all’amministratore.';
-    gate.querySelector('button').addEventListener('click', () => window.atlasAuth?.open());
-    stage.append(gate);
-    setSaveStatus('Accesso riservato');
+    const spark = document.createElement('div');
+    spark.className = 'story-access-spark';
+    spark.textContent = '✳';
+    spark.setAttribute('aria-hidden', 'true');
+    const title = document.createElement('h2');
+    title.innerHTML = editor ? 'La tua prima storia<br><em>comincia qui.</em>' : 'Storie da vivere,<br><em>luoghi da raccontare.</em>';
+    const message = document.createElement('p');
+    message.textContent = editor ? 'Non hai ancora geostorie su Supabase. Creane una, oppure importa quelle salvate in passato su questo browser.' : 'Le geostorie pubblicate compariranno qui. Le bozze restano riservate all’autore.';
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = editor ? '＋ Crea la prima geostoria' : 'Accesso all’editor';
+    button.addEventListener('click', () => editor ? void createStory() : window.atlasAuth?.open());
+    gate.append(spark, title, message, button);
+    stage.prepend(gate);
+    setSaveStatus(editor ? 'Pronto a scrivere' : 'Archivio pubblico');
   }
 
   async function initialize() {
     await window.atlasAuth?.ready;
     authChecked = true;
-    if (!window.atlasAuth?.editor) { showAccessGate(); return; }
     if (editorInitialized) return;
-    editorInitialized = true;
-    bindEvents();
+    editorInitialized = isEditor();
+    if (editorInitialized) bindEvents();
+    else {
+      $('newStoryButton').hidden = true;
+      document.querySelector('.story-toolbar-actions').hidden = true;
+      document.querySelector('.story-local-note').hidden = true;
+      document.querySelector('.story-tools').hidden = true;
+    }
     try {
-      await Promise.all([openDatabase(), loadWaypoints()]);
-      state.stories = await allStories();
-      if (!state.stories.length) {
-        const first = localStorage.getItem('atlante-geostorie-seeded') ? blankStory() : exampleStory();
-        await putStory(first);
-        state.stories.push(clone(first));
-        localStorage.setItem('atlante-geostorie-seeded', '1');
+      await loadWaypoints();
+      if (!client()) throw new Error('Connessione Supabase non disponibile');
+      let query = client().from('geostories').select('id,title,subtitle,kicker,cover,blocks,published,created_at,updated_at').order('updated_at', { ascending: false });
+      if (!isEditor()) query = query.eq('published', true);
+      const { data, error } = await query;
+      if (error) throw error;
+      state.stories = (data || []).map(row => ({ ...row, blocks: Array.isArray(row.blocks) ? row.blocks : [] }));
+      if (isEditor()) {
+        try {
+          state.localStories = await allStories();
+          const imported = JSON.parse(localStorage.getItem('atlante-imported-local-stories') || '[]');
+          $('importLocalButton').hidden = !state.localStories.some(story => !imported.includes(story.id) && !state.stories.some(cloud => cloud.id === story.id));
+        } catch (localError) { console.warn('Archivio precedente non accessibile:', localError); }
       }
-      const selected = state.stories.sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)))[0];
-      await selectStory(selected.id);
-    } catch (error) {
-      statusFromError(error);
-      state.current = exampleStory();
-      state.stories = [clone(state.current)];
-      renderStory();
       renderLibrary();
+      if (state.stories.length) await selectStory(state.stories[0].id);
+      else showEmptyStories(isEditor());
+    } catch (error) {
+      console.error('Lettura geostorie Supabase:', error);
+      setSaveStatus('Connessione non disponibile');
+      notice('Errore nel caricamento delle geostorie. Controlla la connessione e riprova.');
+      showEmptyStories(isEditor());
     }
   }
 
