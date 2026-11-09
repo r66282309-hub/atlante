@@ -805,6 +805,8 @@
 
   function showAccessGate() {
     $('newStoryButton').hidden = true;
+    document.querySelector('.story-toolbar-actions').hidden = true;
+    document.querySelector('.story-local-note').hidden = true;
     $('storyCount').textContent = '—';
     $('storyList').replaceChildren();
     const note = document.createElement('p');

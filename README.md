@@ -4,21 +4,21 @@ Un sito statico pensato per GitHub Pages: **Leaflet + OpenStreetMap + vista sate
 
 ## Geostorie (`dist/storie/`)
 
-L'editor è accessibile dalla voce **Geostorie** dell'Atlante. Puoi:
+L'editor è accessibile dalla voce **Geostorie** dell'Atlante dopo il login di un account autorizzato. Puoi:
 
 - Creare e gestire più bozze, duplicarle o eliminarle con conferma;
 - Aggiungere titoli, paragrafi, waypoint collegati all'Atlante, fotografie, video YouTube e mini-mappe Leaflet (OSM o satellite), cambiandone l'ordine;
 - Inserire foto tramite URL o caricamento dal computer. Le immagini locali vengono ridimensionate e conservate nella bozza;
 - Passare da modifica ad anteprima, importare ed esportare storie in **JSON**, incluse le foto incorporate.
 
-**Importante:** le bozze sono salvate esclusivamente nell'**IndexedDB del browser e del dispositivo che stai usando**. Non sono pubblicate su GitHub né sincronizzate fra PC. Pulire i dati del sito può cancellarle: usa regolarmente **Esporta** per una copia di sicurezza. Il pulsante «Aggiungi luogo» nella mappa resta in attesa di Supabase.
+**Importante:** il login protegge l'interfaccia, ma **le bozze dell'editor attuale sono ancora salvate nell'IndexedDB del browser**. Non sono sincronizzate fra PC. Usa **Esporta** per una copia di sicurezza. Il pulsante «Aggiungi luogo» nella mappa è predisposto all'autenticazione; il modulo di inserimento verrà collegato nel passo successivo.
 
-Lo script `supabase/geostories.sql` definisce uno schema e le policy per la futura pubblicazione delle geostorie dopo l'autenticazione. **Non eseguire ancora questo SQL se non stai configurando la parte Supabase.** Una futura integrazione convertirà gli allegati locali in file nel bucket Storage e salverà i blocchi nel database.
+Il progetto Supabase `atlante-enrico` dispone già delle tabelle `waypoints`, `geostories`, `geostory_waypoints`, `atlas_editors` e del bucket `waypoint-photos`. **Non rieseguire gli script SQL iniziali**, già applicati.
 
 ## Avvio
 
 - Il sito è interamente nella cartella `dist/`. Per provarlo in locale, usa un server HTTP (per esempio `python -m http.server 8000 --directory dist`), poi apri `http://localhost:8000`.
-- In assenza di configurazione Supabase mostra **cinque waypoint dimostrativi** con immagini illustrative, non foto reali dei luoghi.
+- Finché non ci sono waypoint pubblicati su Supabase, mostra **cinque waypoint dimostrativi** con immagini illustrative, non foto reali dei luoghi.
 - I punti dimostrativi si trovano in `dist/data/waypoints.json` e possono essere modificati o sostituiti.
 
 ## Pubblicazione su GitHub Pages
@@ -30,14 +30,21 @@ Lo script `supabase/geostories.sql` definisce uno schema e le policy per la futu
 
 Non serve un backend dedicato né un processo di compilazione.
 
-## Quando collegherai Supabase
+## Accesso amministratore con Supabase Auth
 
-1. Crea un progetto Supabase ed esegui `supabase/schema.sql` nel suo SQL Editor. **Leggi le policy e verifica che l'accesso corrisponda a ciò che vuoi pubblicare.**
-2. Apri `dist/config.js` e inserisci `supabase.url` e `supabase.anonKey` (oppure la nuova *publishable key*). Questi valori sono progettati per il frontend; **non inserire mai la service role key**.
-3. Crea un utente per te in Supabase Auth. Recupera il suo UUID dalla sezione Users ed esegui nel SQL Editor `insert into public.atlas_editors (user_id) values ('IL-TUO-USER-UUID');`. In questo modo **solo gli account che autorizzi** potranno caricare o modificare luoghi. Per i futuri upload, ogni waypoint avrà `owner_id = auth.uid()`, e le foto andranno nel bucket `waypoint-photos` con un percorso del tipo `<user-id>/foto.jpg`.
-4. I waypoint con `published = true` verranno letti automaticamente all'apertura del sito. Quando il collegamento è attivo, gli esempi scompaiono.
+1. Apri la mappa o le geostorie e premi **Accedi**. Se non hai ancora un utente Supabase, inserisci email e password e premi **Crea account**.
+2. Conferma la registrazione tramite email, se richiesta da Supabase, quindi accedi.
+3. Il tuo account sarà **autenticato ma senza permessi di modifica** fino a quando il suo UUID non sarà inserito dall'amministratore in `public.atlas_editors`.
+4. Per autorizzare un utente verificato: nel SQL Editor del progetto **atlante-enrico** (non `soil_point`), esegui `insert into public.atlas_editors (user_id) values ('UUID-UTENTE-VERIFICATO');`. Gli UUID si trovano sotto **Authentication → Users**. La chiave di servizio non deve mai essere incorporata nel sito.
+5. Torna al sito, apri **Account** e premi **Ricontrolla autorizzazione**. Adesso l'editor sarà accessibile.
 
-La prima versione integra **solo la lettura** dal database: il pulsante «Aggiungi luogo» mostra un pannello informativo. L'editor protetto da autenticazione e l'upload di foto saranno implementati nel passo successivo, quando saranno disponibili i dati del progetto Supabase e decideremo come gestire il login.
+Il frontend usa soltanto la **publishable key** di Supabase. Le autorizzazioni vere sono nel database, mediante **RLS** e la lista `atlas_editors`. Gli altri utenti possono consultare solo i record `published = true` e **non possono scrivere**.
+
+Prima di inviare email di conferma e recupero password, in **Supabase → Authentication → URL Configuration** imposta il Site URL del tuo Atlante e aggiungi agli URL di redirect sia la versione GitHub Pages sia quella Sites (se le usi entrambe).
+
+Le policy per consentire agli editor autorizzati le modifiche sono in `supabase/enable_editor_access.sql`, **già applicato** al progetto.
+
+Per ora il sito legge i waypoint pubblicati e offre il login. Il **salvataggio remoto di nuovi waypoint, geostorie e fotografie** sarà il prossimo passo; le bozze esistenti restano locali.
 
 ### Colonne attese
 
@@ -52,7 +59,7 @@ La prima versione integra **solo la lettura** dal database: il pulsante «Aggiun
 | `description` | `text` | Descrizione o appunti |
 | `photos` | `text[]` | Percorsi delle fotografie nel bucket o URL HTTP(S) |
 | `published` | `boolean` | Mostra il luogo sul sito pubblico |
-| `owner_id` | `uuid` | Proprietario autenticato |
+| `owner_id` | `uuid` (facoltativo) | Utente Auth che ha creato il record, oppure nullo per gestione amministrativa |
 
 L'esportazione GeoJSON utilizza longitudine, latitudine nell'ordine richiesto dalla specifica GeoJSON.
 
@@ -67,12 +74,14 @@ L'esportazione GeoJSON utilizza longitudine, latitudine nell'ordine richiesto da
 dist/
   index.html            Interfaccia Leaflet
   styles.css            Layout e responsive
+  auth.css / auth.js     Login e stato dell'editor
   app.js                Ricerca, filtri, marker, dettagli e Supabase (lettura)
   config.js             Configurazione sfondi e Supabase
   data/waypoints.json   Esempi dimostrativi
   storie/               Studio Geostorie (HTML, CSS, JS)
 supabase/schema.sql     Tabelle e policy di accesso
 supabase/geostories.sql Schema per le geostorie future
+supabase/enable_editor_access.sql  Permessi per gli editor autorizzati
 .github/workflows/     Deploy GitHub Pages
 ```
 
