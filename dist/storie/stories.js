@@ -184,8 +184,13 @@
     clearTimeout(state.saveTimer);
     state.saveTimer = null;
     if (state.savingPromise) {
-      await state.savingPromise;
-      if (state.current?.id && state.dirty) return saveNow();
+      const completed = await state.savingPromise;
+      // An error must not start an unbounded chain of retries.
+      if (!completed) return false;
+      if (state.current?.id && state.dirty) {
+        await new Promise(resolve => setTimeout(resolve, 0));
+        return saveNow();
+      }
       return true;
     }
     if (!state.current || !state.dirty) return true;
@@ -780,8 +785,7 @@
         renderHeading();
       }
       queueSave();
-      await saveNow();
-      notice('Fotografia caricata su Supabase.');
+      if (await saveNow()) notice('Fotografia caricata su Supabase.');
     } catch (error) { console.error(error); notice(error.message || 'Impossibile elaborare la foto.'); }
   }
 
