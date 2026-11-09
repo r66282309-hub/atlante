@@ -1,0 +1,53 @@
+.atlas-auth-entry {
+  appearance: none;
+  border: 1px solid rgba(95, 133, 126, .3);
+  border-radius: 9px;
+  padding: 10px 14px;
+  background: rgba(244, 246, 239, .09);
+  color: inherit;
+  font: 600 13px 'DM Sans', sans-serif;
+  cursor: pointer;
+  text-align: left;
+}
+.atlas-auth-entry:hover, .atlas-auth-entry.is-editor { border-color: #d8a767; color: #d8a767; }
+.atlas-auth-dialog {
+  width: min(440px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  padding: 34px;
+  border: 1px solid #d4dcd4;
+  border-radius: 20px;
+  background: #f8f8f2;
+  color: #203c38;
+  box-shadow: 0 25px 100px rgba(12, 31, 28, .3);
+  font-family: 'DM Sans', sans-serif;
+}
+.atlas-auth-dialog::backdrop { background: rgba(12, 31, 28, .66); backdrop-filter: blur(6px); }
+.atlas-auth-close { position: absolute; right: 22px; top: 16px; border: 0; background: transparent; font-size: 30px; color: #60736d; cursor: pointer; }
+.atlas-auth-spark { font-size: 35px; color: #c49b67; margin-bottom: 12px; }
+.atlas-auth-kicker { display: block; font-size: 10px; font-weight: 700; letter-spacing: .19em; color: #8f7860; }
+.atlas-auth-dialog h2 { font-family: 'DM Serif Display', Georgia, serif; font-size: clamp(28px, 6vw, 40px); line-height: 1.05; font-weight: 400; margin: 14px 0; }
+.atlas-auth-dialog h2 em { font-weight: 400; color: #a57e53; }
+.atlas-auth-message { min-height: 38px; font-size: 13px; line-height: 1.6; color: #566b64; }
+.atlas-auth-message.is-error { color: #a43730; }
+.atlas-auth-form { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
+.atlas-auth-form label { font-weight: 700; font-size: 12px; }
+.atlas-auth-form input { box-sizing: border-box; width: 100%; padding: 13px 14px; border: 1px solid #ccd4ce; border-radius: 9px; background: #fff; color: #173430; font: inherit; font-size: 14px; }
+.atlas-auth-form input:focus { outline: 2px solid #c49b67; outline-offset: 1px; }
+.atlas-auth-primary { width: 100%; border: 0; padding: 13px; border-radius: 9px; background: #193c34; color: white; font: 700 14px 'DM Sans', sans-serif; cursor: pointer; margin-top: 10px; }
+.atlas-auth-primary:hover { background: #305e52; }
+.atlas-auth-dialog button:disabled { opacity: .55; cursor: wait; }
+.atlas-auth-secondary { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.atlas-auth-secondary button, .atlas-auth-logout { border: 0; background: transparent; color: #386d5d; font: 600 12px 'DM Sans', sans-serif; cursor: pointer; padding: 8px 0; }
+.atlas-auth-secondary button:hover, .atlas-auth-logout:hover { text-decoration: underline; }
+.atlas-auth-connected { display: flex; flex-direction: column; gap: 10px; font-size: 13px; }
+.atlas-auth-connected strong { word-break: break-word; }
+.atlas-auth-connected span { line-height: 1.5; color: #556c62; }
+.atlas-auth-footnote { margin-top: 22px; padding-top: 14px; border-top: 1px solid #d8e0d9; font-size: 11px; line-height: 1.5; color: #74817b; }
+[hidden] { display: none !important; }
+.story-access-gate { width: min(550px, 90%); margin: auto; padding: 35px; border: 1px solid rgba(107, 138, 129, .2); background: #fbfaf6; border-radius: 20px; text-align: center; color: #26483f; }
+.story-access-gate .story-access-spark { font-size: 42px; color: #c49b67; }
+.story-access-gate h2 { font: 400 36px/1.13 'DM Serif Display', serif; margin: 14px 0; }
+.story-access-gate p { font-size: 14px; line-height: 1.7; color: #677b72; }
+.story-access-gate button { padding: 12px 18px; background: #204c3e; color: white; border: 0; border-radius: 8px; cursor: pointer; font-weight: 700; }
+@media (max-width: 600px) { .atlas-auth-dialog { padding: 26px 20px; } }

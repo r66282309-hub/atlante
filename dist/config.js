@@ -16,8 +16,8 @@ window.ATLAS_CONFIG = {
     maxNativeZoom: 20
   },
   supabase: {
-    url: '',
-    anonKey: '',
+    url: 'https://rcfbtwxnxvfzgtgzxwdn.supabase.co',
+    anonKey: 'sb_publishable_5C89qxe4wIj2lAqBy1v4vw_Z2g0InMU',
     table: 'waypoints',
     photoBucket: 'waypoint-photos'
   }

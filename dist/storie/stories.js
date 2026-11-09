@@ -7,6 +7,8 @@
   const TYPE_NAMES = { heading: 'Titolo', paragraph: 'Testo', waypoint: 'Waypoint', image: 'Fotografia', video: 'Video YouTube', map: 'Mini-mappa' };
   const TYPE_ICONS = { heading: 'T', paragraph: '≡', waypoint: '⌖', image: '▧', video: '▶', map: '◇' };
   const state = { stories: [], current: null, waypoints: [], preview: false, maps: [], saveTimer: null, dirty: false, revision: 0, pendingImageId: null, storageError: false };
+  let editorInitialized = false;
+  let authChecked = false;
   let dbPromise;
   let toastTimer;
 
@@ -801,7 +803,37 @@
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && state.dirty) void saveNow(); });
   }
 
+  function showAccessGate() {
+    $('newStoryButton').hidden = true;
+    $('storyCount').textContent = '—';
+    $('storyList').replaceChildren();
+    const note = document.createElement('p');
+    note.className = 'draft-loading';
+    note.textContent = 'Le geostorie pubblicate compariranno qui. L’editor è riservato al proprietario.';
+    $('storyList').append(note);
+    document.querySelector('.story-tools').hidden = true;
+    const stage = $('storyStage');
+    stage.replaceChildren();
+    const gate = document.createElement('section');
+    gate.className = 'story-access-gate';
+    gate.innerHTML = `<div class="story-access-spark" aria-hidden="true">✳</div>
+      <h2>Storie da vivere,<br><em>luoghi da raccontare.</em></h2>
+      <p id="storyGateDescription"></p>
+      <button type="button">Accesso all’editor</button>`;
+    gate.querySelector('#storyGateDescription').textContent = window.atlasAuth?.user
+      ? 'Account autenticato. Per modificare le geostorie serve anche l’abilitazione del proprietario.'
+      : 'L’Atlante è pubblico, ma l’editor delle geostorie è riservato all’amministratore.';
+    gate.querySelector('button').addEventListener('click', () => window.atlasAuth?.open());
+    stage.append(gate);
+    setSaveStatus('Accesso riservato');
+  }
+
   async function initialize() {
+    await window.atlasAuth?.ready;
+    authChecked = true;
+    if (!window.atlasAuth?.editor) { showAccessGate(); return; }
+    if (editorInitialized) return;
+    editorInitialized = true;
     bindEvents();
     try {
       await Promise.all([openDatabase(), loadWaypoints()]);
@@ -823,5 +855,8 @@
     }
   }
 
+  window.addEventListener('atlas-auth-changed', () => {
+    if (authChecked && Boolean(window.atlasAuth?.editor) !== editorInitialized) window.location.reload();
+  });
   void initialize();
 })();

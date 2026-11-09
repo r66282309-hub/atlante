@@ -288,10 +288,14 @@
         supabase = createClient(settings.url, settings.anonKey);
         const { data, error } = await supabase.from(settings.table).select('id,title,area,category,lat,lon,visited_at,description,photos,published').eq('published', true).order('visited_at', { ascending: false });
         if (error) throw error;
-        state.demo = false;
-        state.all = (data || []).map(row => toWaypoint(row)).filter(Boolean);
-        $('dataStatus').textContent = 'Dati pubblicati su Supabase';
-        document.querySelector('.data-state').classList.add('connected');
+        if (data?.length) {
+          state.demo = false;
+          state.all = data.map(row => toWaypoint(row)).filter(Boolean);
+          $('dataStatus').textContent = 'Dati pubblicati su Supabase';
+          document.querySelector('.data-state').classList.add('connected');
+        } else {
+          $('dataStatus').textContent = 'Atlante in preparazione · luoghi dimostrativi';
+        }
       } catch (error) {
         console.error('Caricamento Supabase:', error);
         $('dataStatus').textContent = 'Supabase non raggiungibile · demo';
@@ -348,7 +352,10 @@
     });
     $('exportButton').addEventListener('click', downloadGeoJSON);
     $('aboutButton').addEventListener('click', () => $('infoDialog').showModal());
-    $('addButton').addEventListener('click', () => $('infoDialog').showModal());
+    $('addButton').addEventListener('click', () => {
+      if (window.atlasAuth?.editor) $('infoDialog').showModal();
+      else window.atlasAuth?.open();
+    });
     document.addEventListener('keydown', event => { if (event.key === 'Escape' && state.selectedId) closePlace(); });
   }
 
