@@ -94,7 +94,7 @@
 
   function blankStory() {
     const now = new Date().toISOString();
-    return { id: uid(), title: 'Una nuova geostoria', subtitle: '', kicker: 'DIARIO DI VIAGGIO', cover: '', published: false, created_at: now, updated_at: now, blocks: [{ id: uid(), type: 'paragraph', text: '' }] };
+    return { id: uid(), title: 'Una nuova geostoria', subtitle: '', kicker: 'DIARIO DI VIAGGIO', cover: '', published: false, created_at: now, updated_at: now, linkedWaypointIds: [], blocks: [{ id: uid(), type: 'paragraph', text: '' }] };
   }
 
   function exampleStory() {
@@ -149,6 +149,9 @@
   async function syncStoryWaypoints(story) {
     const api = client();
     const ids = [];
+    (story.linkedWaypointIds || []).forEach(id => {
+      if (isUUID(id) && state.waypoints.some(point => point.id === id) && !ids.includes(id)) ids.push(id);
+    });
     story.blocks.forEach(block => {
       if (block.type === 'waypoint' && isUUID(block.waypointId) && state.waypoints.some(point => point.id === block.waypointId) && !ids.includes(block.waypointId)) ids.push(block.waypointId);
     });
@@ -267,6 +270,11 @@
     const story = state.stories.find(item => item.id === id);
     if (!story) return;
     state.current = clone(story);
+    if (isUUID(id)) {
+      const url = new URL(window.location.href);
+      url.searchParams.set('story', id);
+      window.history.replaceState(null, '', url);
+    }
     state.preview = !isEditor();
     renderStory();
     renderLibrary();
@@ -340,6 +348,68 @@
     publish.textContent = story.published ? '● Pubblicata' : '○ Bozza privata';
     publish.setAttribute('aria-pressed', String(Boolean(story.published)));
     publish.classList.toggle('is-published', Boolean(story.published));
+    const linked = new Set([...(story.linkedWaypointIds || []), ...story.blocks.filter(block => block.type === 'waypoint').map(block => block.waypointId)]);
+    $('linkedWaypointCount').textContent = String([...linked].filter(id => state.waypoints.some(point => point.id === id)).length);
+  }
+
+  function openLinkedWaypoints() {
+    if (!isEditor() || !state.current) return;
+    const list = $('linkedWaypointList');
+    list.replaceChildren();
+    $('linkedWaypointSearch').value = '';
+    $('linkedWaypointWarning').hidden = true;
+    const embedded = new Set(state.current.blocks.filter(block => block.type === 'waypoint').map(block => block.waypointId));
+    const selected = new Set([...(state.current.linkedWaypointIds || []), ...embedded]);
+    if (!state.waypoints.length) {
+      const message = document.createElement('p');
+      message.className = 'story-link-empty';
+      message.textContent = 'Non hai ancora waypoint. Creane uno dalla mappa, poi potrai associarlo alla geostoria.';
+      list.append(message);
+    }
+    for (const point of state.waypoints) {
+      const row = document.createElement('label');
+      row.className = 'story-link-item';
+      row.dataset.search = `${point.title} ${point.area || ''}`.toLocaleLowerCase('it-IT');
+      const input = document.createElement('input');
+      input.type = 'checkbox';
+      input.value = point.id;
+      input.checked = selected.has(point.id);
+      input.disabled = embedded.has(point.id);
+      const copy = document.createElement('span');
+      const name = document.createElement('strong');
+      name.textContent = point.title;
+      const note = document.createElement('small');
+      note.textContent = `${point.area || 'Luogo senza località'}${!point.published ? ' · BOZZA' : ''}${embedded.has(point.id) ? ' · PRESENTE NEI BLOCCHI' : ''}`;
+      copy.append(name, note);
+      row.append(input, copy);
+      list.append(row);
+    }
+    $('linkedWaypointsDialog').showModal();
+    $('linkedWaypointSearch').focus();
+  }
+
+  async function saveLinkedWaypoints() {
+    if (!isEditor() || !state.current) return;
+    const dialog = $('linkedWaypointsDialog');
+    const button = $('saveLinkedWaypoints');
+    const selected = [...$('linkedWaypointList').querySelectorAll('input[type="checkbox"]:checked')].map(input => input.value);
+    const previous = state.current.linkedWaypointIds || [];
+    const storyId = state.current.id;
+    button.disabled = true;
+    state.current.linkedWaypointIds = selected;
+    queueSave();
+    renderHeading();
+    try {
+      if (!(await saveNow())) throw new Error('Controlla la connessione e riprova.');
+      if (state.current?.id === storyId) dialog.close();
+      notice(`${selected.length} waypoint associati alla geostoria.`);
+    } catch (error) {
+      if (state.current?.id === storyId) state.current.linkedWaypointIds = previous;
+      renderHeading();
+      const warning = $('linkedWaypointWarning');
+      warning.textContent = `Collegamenti non salvati: ${error.message}`;
+      warning.hidden = false;
+    } finally { button.disabled = false; }
   }
 
   function renderStory() {
@@ -811,6 +881,7 @@
     base.subtitle = asText(raw.subtitle, 400);
     base.kicker = asText(raw.kicker || 'GEOSTORIA IMPORTATA', 70);
     base.cover = imageUrl(raw.cover);
+    base.linkedWaypointIds = [...new Set((Array.isArray(raw.linkedWaypointIds) ? raw.linkedWaypointIds : []).filter(isUUID))];
     base.blocks = raw.blocks.slice(0, 150).filter(item => item && TYPES.includes(item.type)).map(item => {
       const block = defaultBlock(item.type);
       if (['heading', 'paragraph'].includes(item.type)) block.text = asText(item.text);
@@ -889,8 +960,9 @@
       if (!isEditor() || !state.current) return;
       if (!(await saveNow())) return;
       const original = Boolean(state.current.published);
-      if (!original && state.current.blocks.some(block => block.type === 'waypoint' && state.waypoints.some(point => point.id === block.waypointId && !point.published))) {
-        notice('Per pubblicare la storia, pubblica prima i waypoint che contiene.');
+      const associated = new Set([...(state.current.linkedWaypointIds || []), ...state.current.blocks.filter(block => block.type === 'waypoint').map(block => block.waypointId)]);
+      if (!original && state.waypoints.some(point => associated.has(point.id) && !point.published)) {
+        notice('Per pubblicare la storia, pubblica prima i waypoint associati ancora in bozza.');
         return;
       }
       state.current.published = !original;
@@ -904,6 +976,13 @@
       } else notice(state.current.published ? 'Geostoria pubblicata: ora è visibile ai visitatori.' : 'Geostoria riportata a bozza privata.');
     });
     $('importLocalButton').addEventListener('click', () => void importLocalStories());
+    $('linkWaypointsButton').addEventListener('click', openLinkedWaypoints);
+    $('linkedWaypointSearch').addEventListener('input', event => {
+      const query = event.target.value.trim().toLocaleLowerCase('it-IT');
+      $('linkedWaypointList').querySelectorAll('.story-link-item').forEach(row => { row.hidden = !row.dataset.search.includes(query); });
+    });
+    $('cancelLinkedWaypoints').addEventListener('click', () => $('linkedWaypointsDialog').close());
+    $('saveLinkedWaypoints').addEventListener('click', () => void saveLinkedWaypoints());
     $('previewButton').addEventListener('click', async () => { await saveNow(); state.preview = !state.preview; renderStory(); $('storyStage').scrollTop = 0; });
     $('blockPicker').addEventListener('click', event => {
       const button = event.target.closest('[data-add]');
@@ -982,7 +1061,14 @@
       if (!isEditor()) query = query.eq('published', true);
       const { data, error } = await query;
       if (error) throw error;
-      state.stories = (data || []).map(row => ({ ...row, blocks: Array.isArray(row.blocks) ? row.blocks : [] }));
+      const { data: links, error: linksError } = await client().from('geostory_waypoints').select('geostory_id,waypoint_id,position').order('position', { ascending: true });
+      if (linksError) throw linksError;
+      const linkedByStory = new Map();
+      for (const link of links || []) {
+        if (!linkedByStory.has(link.geostory_id)) linkedByStory.set(link.geostory_id, []);
+        linkedByStory.get(link.geostory_id).push(link.waypoint_id);
+      }
+      state.stories = (data || []).map(row => ({ ...row, blocks: Array.isArray(row.blocks) ? row.blocks : [], linkedWaypointIds: linkedByStory.get(row.id) || [] }));
       if (isEditor()) {
         try {
           state.localStories = await allStories();
@@ -991,7 +1077,8 @@
         } catch (localError) { console.warn('Archivio precedente non accessibile:', localError); }
       }
       renderLibrary();
-      if (state.stories.length) await selectStory(state.stories[0].id);
+      const requestedId = new URLSearchParams(window.location.search).get('story');
+      if (state.stories.length) await selectStory(state.stories.find(story => story.id === requestedId)?.id || state.stories[0].id);
       else showEmptyStories(isEditor());
     } catch (error) {
       console.error('Lettura geostorie Supabase:', error);

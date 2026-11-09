@@ -10,13 +10,13 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./styles.css?v=20261109-links" />
     <link rel="stylesheet" href="./auth.css" />
     <link rel="stylesheet" href="./atlas-editor.css" />
     <script defer src="./config.js"></script>
     <script defer src="./auth.js?v=20261109-login2"></script>
     <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-    <script defer src="./app.js?v=20261109-cloud"></script>
+    <script defer src="./app.js?v=20261109-links"></script>
   </head>
   <body>
     <div class="app-shell">
@@ -90,7 +90,7 @@
         <section class="detail-panel" id="detailPanel" aria-label="Dettagli del luogo" aria-hidden="true">
           <button id="closeDetailButton" class="close-detail" type="button" aria-label="Chiudi dettagli">×</button>
           <div class="detail-photo" id="detailPhoto"><span class="detail-photo-tag">FOTO DIMOSTRATIVA</span></div>
-          <div class="detail-body"><div class="detail-meta"><span id="detailCategory">NATURA</span><span id="detailDate"></span></div><h2 id="detailTitle"></h2><p class="detail-area" id="detailArea"></p><p class="detail-description" id="detailDescription"></p><div class="photo-strip" id="photoStrip"></div><div class="detail-footer"><div class="coords"><span>COORDINATE</span><strong id="detailCoords"></strong></div><button id="copyCoordsButton" type="button" class="copy-button">Copia ↗</button></div><button id="editPlaceButton" type="button" class="edit-place-button" hidden>✎ Modifica questo luogo</button></div>
+          <div class="detail-body"><div class="detail-meta"><span id="detailCategory">NATURA</span><span id="detailDate"></span></div><h2 id="detailTitle"></h2><p class="detail-area" id="detailArea"></p><p class="detail-description" id="detailDescription"></p><section class="place-stories" id="placeStories" aria-label="Geostorie collegate" hidden><h3>✳ GEOSTORIE COLLEGATE</h3><div class="place-stories-list" id="placeStoriesList"></div></section><div class="photo-strip" id="photoStrip"></div><div class="detail-footer"><div class="coords"><span>COORDINATE</span><strong id="detailCoords"></strong></div><button id="copyCoordsButton" type="button" class="copy-button">Copia ↗</button></div><button id="editPlaceButton" type="button" class="edit-place-button" hidden>✎ Modifica questo luogo</button></div>
         </section>
 
         <div class="map-credits">MADE FOR WANDERING <span>✷</span> AND REMEMBERING</div>

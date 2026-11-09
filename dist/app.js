@@ -5,7 +5,7 @@
   const $ = id => document.getElementById(id);
   const labels = { natura: 'Natura', mare: 'Mare', borghi: 'Borghi', trekking: 'Trekking' };
   const symbols = { natura: '✳', mare: '≈', borghi: '⌂', trekking: '▲' };
-  const state = { all: [], visible: [], selectedId: null, category: 'tutti', query: '', demo: true, markers: new Map(), photoIndex: 0, currentLayer: 'osm', editingId: null, retainedPhotos: [], saving: false, picking: false };
+  const state = { all: [], visible: [], selectedId: null, category: 'tutti', query: '', demo: true, markers: new Map(), storiesByWaypoint: new Map(), photoIndex: 0, currentLayer: 'osm', editingId: null, retainedPhotos: [], saving: false, picking: false };
   let map;
   let markersGroup;
   let osmLayer;
@@ -207,6 +207,31 @@
     [...$('photoStrip').children].forEach((button, i) => button.classList.toggle('active', i === index));
   }
 
+  function renderRelatedStories(place) {
+    const section = $('placeStories');
+    const list = $('placeStoriesList');
+    const stories = state.storiesByWaypoint.get(place.id) || [];
+    list.replaceChildren();
+    section.hidden = !stories.length;
+    for (const story of stories) {
+      const link = document.createElement('a');
+      link.className = 'place-story-link';
+      link.href = `./storie/?story=${encodeURIComponent(story.id)}`;
+      const text = document.createElement('span');
+      text.textContent = story.title || 'Geostoria senza titolo';
+      const arrow = document.createElement('span');
+      arrow.className = 'place-story-arrow';
+      arrow.textContent = '↗';
+      link.append(text, arrow);
+      if (!story.published && window.atlasAuth?.editor) {
+        const draft = document.createElement('small');
+        draft.textContent = 'BOZZA PRIVATA';
+        text.append(draft);
+      }
+      list.append(link);
+    }
+  }
+
   function openPlace(id) {
     const place = state.all.find(item => item.id === id);
     if (!place || !state.visible.includes(place)) return;
@@ -218,6 +243,7 @@
     $('detailTitle').textContent = place.title;
     $('detailArea').textContent = place.area;
     $('detailDescription').textContent = place.description;
+    renderRelatedStories(place);
     $('detailCoords').textContent = `${place.lat.toFixed(5)}° N, ${place.lon.toFixed(5)}° E`;
     $('editPlaceButton').hidden = !(window.atlasAuth?.editor && !place.demo);
     const strip = $('photoStrip');
@@ -425,6 +451,33 @@
     finally { state.saving = false; }
   }
 
+  async function loadRelatedStories() {
+    state.storiesByWaypoint = new Map();
+    if (!supabase) return;
+    try {
+      let storiesQuery = supabase.from('geostories').select('id,title,published');
+      if (!window.atlasAuth?.editor) storiesQuery = storiesQuery.eq('published', true);
+      const [storiesResult, linksResult] = await Promise.all([
+        storiesQuery,
+        supabase.from('geostory_waypoints').select('geostory_id,waypoint_id,position').order('position', { ascending: true })
+      ]);
+      if (storiesResult.error) throw storiesResult.error;
+      if (linksResult.error) throw linksResult.error;
+      const stories = new Map((storiesResult.data || []).map(story => [story.id, story]));
+      for (const link of linksResult.data || []) {
+        const story = stories.get(link.geostory_id);
+        if (!story) continue;
+        if (!state.storiesByWaypoint.has(link.waypoint_id)) state.storiesByWaypoint.set(link.waypoint_id, []);
+        const related = state.storiesByWaypoint.get(link.waypoint_id);
+        if (!related.some(item => item.id === story.id)) related.push(story);
+      }
+      if (state.selectedId) {
+        const place = state.all.find(item => item.id === state.selectedId);
+        if (place) renderRelatedStories(place);
+      }
+    } catch (error) { console.warn('Geostorie associate non disponibili:', error); }
+  }
+
   async function loadPlaces(firstLoad = true) {
     const settings = config.supabase;
     if (settings.url && settings.anonKey) {
@@ -438,6 +491,7 @@
         if (error) throw error;
         state.demo = !data?.length && !window.atlasAuth?.editor;
         state.all = (data || []).map(row => toWaypoint(row)).filter(Boolean);
+        await loadRelatedStories();
         if (!state.demo) {
           $('dataStatus').textContent = window.atlasAuth?.editor ? 'Area editor · bozze e pubblicati' : 'Dati pubblicati su Supabase';
           document.querySelector('.data-state').classList.add('connected');

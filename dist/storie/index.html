@@ -12,11 +12,11 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="../styles.css" />
     <link rel="stylesheet" href="../auth.css" />
-    <link rel="stylesheet" href="./stories.css?v=20261109-cloud" />
+    <link rel="stylesheet" href="./stories.css?v=20261109-links" />
     <script defer src="../config.js"></script>
     <script defer src="../auth.js?v=20261109-login2"></script>
     <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-    <script defer src="./stories.js?v=20261109-cloud"></script>
+    <script defer src="./stories.js?v=20261109-links"></script>
   </head>
   <body class="story-body">
     <div class="story-app" id="storyApp">
@@ -54,6 +54,7 @@
           <div class="story-breadcrumb"><span>GEOSTORIE</span><span class="breadcrumb-divider">/</span><strong id="toolbarStoryTitle">Il mio racconto</strong></div>
           <div class="story-toolbar-actions">
             <span class="save-indicator" id="saveIndicator"><span class="save-light"></span> Caricamento…</span>
+            <button class="toolbar-button story-link-button" type="button" id="linkWaypointsButton" title="Scegli i waypoint associati a questa geostoria">⌖ Associa waypoint <span id="linkedWaypointCount">0</span></button>
             <button class="toolbar-button story-publish-button" type="button" id="publishStoryButton" aria-pressed="false">○ Bozza privata</button>
             <button class="toolbar-button hide-small" type="button" id="importLocalButton" title="Importa le vecchie bozze locali" hidden>Da browser</button>
             <button class="toolbar-button hide-small" type="button" id="importButton" title="Importa una geostoria JSON"><svg viewBox="0 0 24 24" fill="none"><path d="M12 16V3m0 0L8 7m4-4 4 4M4 17v4h16v-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg> Importa</button>
@@ -126,6 +127,17 @@
         <button type="button" data-add="video"><span>▶</span>Video YouTube</button>
         <button type="button" data-add="map"><span>◇</span>Mini-mappa</button>
       </div>
+    </dialog>
+    <dialog class="story-dialog story-links-dialog" id="linkedWaypointsDialog" aria-labelledby="linkedWaypointsTitle">
+      <form method="dialog"><button class="dialog-close" aria-label="Chiudi">×</button></form>
+      <span class="dialog-kicker">GEOSTORIA E LUOGHI</span>
+      <h2 id="linkedWaypointsTitle">Associa i <em>waypoint.</em></h2>
+      <p>Seleziona tutti i luoghi collegati al racconto. Nel dettaglio di ciascun waypoint sulla mappa comparirà il titolo di questa geostoria.</p>
+      <label class="story-link-search-label" for="linkedWaypointSearch">CERCA UN LUOGO</label>
+      <input id="linkedWaypointSearch" class="story-link-search" type="search" placeholder="Nome o località del waypoint…" autocomplete="off" />
+      <div class="story-link-list" id="linkedWaypointList" role="group" aria-label="Waypoint disponibili"></div>
+      <p class="story-link-warning" id="linkedWaypointWarning" hidden></p>
+      <div class="story-link-actions"><button type="button" id="cancelLinkedWaypoints" class="story-link-cancel">Annulla</button><button type="button" id="saveLinkedWaypoints" class="dialog-action">Salva collegamenti</button></div>
     </dialog>
     <dialog class="story-dialog" id="helpDialog" aria-labelledby="helpTitle">
       <form method="dialog"><button class="dialog-close" aria-label="Chiudi">×</button></form>
