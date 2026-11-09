@@ -19,6 +19,102 @@
   const clone = value => structuredClone(value);
   const asText = (value, limit = 20000) => String(value ?? '').slice(0, limit);
 
+  // Render Markdown as DOM nodes, never as untrusted HTML. Existing plain-text
+  // paragraphs still work, while formatted stories can share the same field.
+  function appendMarkdownInline(parent, source) {
+    const input = String(source ?? '');
+    const tokens = /\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)|\*\*([^*\n]+)\*\*|__([^_\n]+)__|`([^`\n]+)`|\*([^*\n]+)\*|_([^_\n]+)_/g;
+    let offset = 0;
+    for (const match of input.matchAll(tokens)) {
+      parent.append(document.createTextNode(input.slice(offset, match.index)));
+      let node;
+      if (match[1] !== undefined) {
+        try {
+          const url = new URL(match[2]);
+          if (!['http:', 'https:'].includes(url.protocol)) throw new Error('URL non valido');
+          node = document.createElement('a');
+          node.href = url.href;
+          node.target = '_blank';
+          node.rel = 'noopener noreferrer';
+          node.textContent = match[1];
+        } catch { node = document.createTextNode(match[0]); }
+      } else {
+        node = document.createElement(match[5] !== undefined ? 'code' : (match[3] !== undefined || match[4] !== undefined) ? 'strong' : 'em');
+        node.textContent = match[3] ?? match[4] ?? match[5] ?? match[6] ?? match[7];
+      }
+      parent.append(node);
+      offset = match.index + match[0].length;
+    }
+    parent.append(document.createTextNode(input.slice(offset)));
+  }
+
+  function renderMarkdown(source) {
+    const root = document.createElement('div');
+    root.className = 'preview-markdown';
+    const lines = String(source ?? '').replace(/\r\n?/g, '\n').split('\n');
+    const heading = line => /^(#{1,4})\s+(.+)$/.exec(line.trim());
+    const divider = line => /^(?:-{3,}|\*{3,}|_{3,})$/.test(line.trim());
+    const listItem = line => /^\s*([-*+]\s+|\d+\.\s+)(.+)$/.exec(line);
+    const special = line => heading(line) || divider(line) || listItem(line) || /^\s*>\s?/.test(line) || /^\s*```/.test(line);
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+      if (!line.trim()) { i++; continue; }
+      const title = heading(line);
+      if (title) {
+        const level = title[1].length <= 2 ? 2 : title[1].length === 3 ? 3 : 4;
+        const element = document.createElement(`h${level}`);
+        appendMarkdownInline(element, title[2]);
+        root.append(element);
+        i++;
+      } else if (divider(line)) {
+        root.append(document.createElement('hr'));
+        i++;
+      } else if (/^\s*```/.test(line)) {
+        const code = [];
+        i++;
+        while (i < lines.length && !/^\s*```/.test(lines[i])) code.push(lines[i++]);
+        if (i < lines.length) i++;
+        const pre = document.createElement('pre');
+        const child = document.createElement('code');
+        child.textContent = code.join('\n');
+        pre.append(child);
+        root.append(pre);
+      } else if (listItem(line)) {
+        const ordered = /^\s*\d+\.\s+/.test(line);
+        const list = document.createElement(ordered ? 'ol' : 'ul');
+        while (i < lines.length) {
+          const item = listItem(lines[i]);
+          if (!item || /^\s*\d+\.\s+/.test(lines[i]) !== ordered) break;
+          const li = document.createElement('li');
+          appendMarkdownInline(li, item[2]);
+          list.append(li);
+          i++;
+        }
+        root.append(list);
+      } else if (/^\s*>\s?/.test(line)) {
+        const quote = [];
+        while (i < lines.length && /^\s*>\s?/.test(lines[i])) quote.push(lines[i++].replace(/^\s*>\s?/, ''));
+        const block = document.createElement('blockquote');
+        appendMarkdownInline(block, quote.join('\n'));
+        root.append(block);
+      } else {
+        const paragraph = [line];
+        i++;
+        while (i < lines.length && lines[i].trim() && !special(lines[i])) paragraph.push(lines[i++]);
+        const p = document.createElement('p');
+        appendMarkdownInline(p, paragraph.join('\n'));
+        root.append(p);
+      }
+    }
+    if (!root.childNodes.length) {
+      const placeholder = document.createElement('p');
+      placeholder.textContent = 'Qui inizierà il tuo racconto…';
+      root.append(placeholder);
+    }
+    return root;
+  }
+
   function imageUrl(value) {
     if (typeof value !== 'string') return '';
     if (/^data:image\/(jpeg|png|webp|avif);base64,[a-z0-9+/=]+$/i.test(value) && value.length < 18000000) return value;
@@ -618,11 +714,14 @@
       }
       case 'paragraph': {
         if (preview) {
-          const p = document.createElement('p');
-          p.className = 'preview-paragraph';
-          p.textContent = block.text || 'Qui inizierà il tuo racconto…';
-          content.append(p);
-        } else content.append(makeControl('IL RACCONTO', { kind: 'textarea', rows: 5, value: block.text, placeholder: 'Scrivi un ricordo, una descrizione, una nota di viaggio…', onChange: value => { block.text = value; queueSave(); } }));
+          content.append(renderMarkdown(block.text));
+        } else {
+          content.append(makeControl('IL RACCONTO · MARKDOWN', { kind: 'textarea', rows: 5, value: block.text, placeholder: 'Scrivi qui… Puoi usare ## Titolo, **grassetto**, elenchi e link.', onChange: value => { block.text = value; queueSave(); } }));
+          const hint = document.createElement('p');
+          hint.className = 'markdown-editor-hint';
+          hint.textContent = 'Markdown: ## Titolo  ·  **grassetto**  ·  *corsivo*  ·  - elenco  ·  --- separatore  ·  [link](https://…)';
+          content.append(hint);
+        }
         break;
       }
       case 'waypoint': {
