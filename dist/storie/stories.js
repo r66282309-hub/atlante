@@ -4,7 +4,7 @@
   const $ = id => document.getElementById(id);
   const config = window.ATLAS_CONFIG;
   const TYPES = ['heading', 'paragraph', 'waypoint', 'image', 'video', 'map'];
-  const TYPE_NAMES = { heading: 'Titolo', paragraph: 'Testo', waypoint: 'Waypoint', image: 'Fotografia', video: 'Video YouTube', map: 'Mini-mappa' };
+  const TYPE_NAMES = { heading: 'Titolo', paragraph: 'Testo', waypoint: 'Waypoint', image: 'Fotografia', video: 'Video', map: 'Mini-mappa' };
   const TYPE_ICONS = { heading: 'T', paragraph: '≡', waypoint: '⌖', image: '▧', video: '▶', map: '◇' };
   const state = { stories: [], current: null, waypoints: [], localStories: [], preview: false, maps: [], saveTimer: null, savingPromise: null, dirty: false, revision: 0, pendingImageId: null, storageError: false };
   let editorInitialized = false;
@@ -554,7 +554,7 @@
       case 'paragraph': return (block.text || '').slice(0, 35) || 'Paragrafo';
       case 'waypoint': return state.waypoints.find(point => String(point.id) === block.waypointId)?.title || 'Waypoint';
       case 'image': return block.caption || 'Fotografia';
-      case 'video': return block.caption || 'Video YouTube';
+      case 'video': return block.caption || 'Video';
       case 'map': return block.caption || 'Mini-mappa';
       default: return 'Blocco';
     }
@@ -635,20 +635,80 @@
     return div;
   }
 
+  function imageKitVideoUrl(input) {
+    if (typeof input !== 'string' || !input.trim()) return '';
+    try {
+      const url = new URL(input.trim());
+      return url.protocol === 'https:' && url.hostname.toLowerCase() === 'ik.imagekit.io' && /\.mp4$/i.test(decodeURIComponent(url.pathname)) ? url.href : '';
+    } catch { return ''; }
+  }
+
+  function imageKitVideoDisplay(url) {
+    const frame = document.createElement('div');
+    frame.className = 'imagekit-frame';
+    const video = document.createElement('video');
+    video.src = url;
+    video.preload = 'metadata';
+    video.playsInline = true;
+    video.setAttribute('playsinline', '');
+    video.setAttribute('aria-label', 'Video della geostoria');
+
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'imagekit-video-toggle';
+    const icon = document.createElement('span');
+    icon.className = 'imagekit-play-icon';
+    icon.setAttribute('aria-hidden', 'true');
+    toggle.append(icon);
+
+    const updatePlayback = () => {
+      const paused = video.paused || video.ended;
+      toggle.classList.toggle('is-playing', !paused);
+      toggle.setAttribute('aria-label', paused ? 'Riproduci video' : 'Metti in pausa');
+      icon.textContent = paused ? '▶' : 'Ⅱ';
+    };
+    toggle.addEventListener('click', () => {
+      if (video.paused || video.ended) video.play().catch(() => updatePlayback());
+      else video.pause();
+    });
+    ['play', 'pause', 'ended'].forEach(event => video.addEventListener(event, updatePlayback));
+    video.addEventListener('error', () => {
+      toggle.title = 'Impossibile caricare il video';
+      updatePlayback();
+    });
+
+    const fullscreen = document.createElement('button');
+    fullscreen.type = 'button';
+    fullscreen.className = 'imagekit-video-fullscreen';
+    fullscreen.textContent = '⛶';
+    fullscreen.setAttribute('aria-label', 'Schermo intero');
+    fullscreen.title = 'Schermo intero';
+    fullscreen.addEventListener('click', () => {
+      if (document.fullscreenElement) { document.exitFullscreen?.(); return; }
+      if (frame.requestFullscreen) frame.requestFullscreen().catch(() => video.webkitEnterFullscreen?.());
+      else video.webkitEnterFullscreen?.();
+    });
+
+    frame.append(video, toggle, fullscreen);
+    updatePlayback();
+    return frame;
+  }
+
   function videoDisplay(url) {
+    const mp4 = imageKitVideoUrl(url);
+    if (mp4) return imageKitVideoDisplay(mp4);
     const id = youtubeId(url);
     if (!id) {
       const empty = document.createElement('div');
       empty.className = 'youtube-placeholder';
-      empty.append(emptyMedia('Incolla un link YouTube valido', '▶'));
+      empty.append(emptyMedia('Incolla un link YouTube o MP4 ImageKit valido', '▶'));
       return empty;
     }
     const container = document.createElement('div');
     container.className = 'youtube-frame';
     const iframe = document.createElement('iframe');
-    // Native YouTube click-to-play/pause remains active; only the standard
-    // control strip is hidden. YouTube attribution may still be displayed.
-    iframe.src = `https://www.youtube-nocookie.com/embed/${id}?controls=0&playsinline=1&rel=0`;
+    // Existing YouTube blocks remain compatible.
+    iframe.src = 'https://www.youtube-nocookie.com/embed/' + id + '?controls=0&playsinline=1&rel=0';
     iframe.title = 'Video YouTube incorporato nella geostoria';
     iframe.loading = 'lazy';
     iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share';
@@ -850,7 +910,7 @@
         break;
       }
       case 'video': {
-        if (!preview) content.append(makeControl('LINK A YOUTUBE', { type: 'url', value: block.url, placeholder: 'https://www.youtube.com/watch?v=…', live: false, onChange: value => { block.url = value; queueSave(); renderBlocks(); } }));
+        if (!preview) content.append(makeControl('URL DEL VIDEO · YOUTUBE O IMAGEKIT MP4', { type: 'url', value: block.url, placeholder: 'https://ik.imagekit.io/.../filmato.mp4', live: false, onChange: value => { block.url = value; queueSave(); renderBlocks(); } }));
         const media = videoDisplay(block.url);
         media.style.marginTop = preview ? '0' : '13px';
         content.append(media);
@@ -1082,7 +1142,7 @@
       if (['heading', 'paragraph'].includes(item.type)) block.text = asText(item.text);
       if (item.type === 'waypoint') { block.waypointId = asText(item.waypointId, 100); block.caption = asText(item.caption, 1000); }
       if (item.type === 'image') { block.src = imageUrl(item.src); block.caption = asText(item.caption, 1000); }
-      if (item.type === 'video') { block.url = youtubeId(item.url) ? asText(item.url, 500) : ''; block.caption = asText(item.caption, 1000); }
+      if (item.type === 'video') { block.url = (youtubeId(item.url) || imageKitVideoUrl(item.url)) ? asText(item.url, 500) : ''; block.caption = asText(item.caption, 1000); }
       if (item.type === 'map') {
         block.lat = Number(item.lat) >= -90 && Number(item.lat) <= 90 ? Number(item.lat) : 40.08;
         block.lon = Number(item.lon) >= -180 && Number(item.lon) <= 180 ? Number(item.lon) : 9.04;
