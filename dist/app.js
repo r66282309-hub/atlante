@@ -3,8 +3,8 @@
 
   const config = window.ATLAS_CONFIG;
   const $ = id => document.getElementById(id);
-  const labels = { natura: 'Natura', mare: 'Mare', borghi: 'Borghi', trekking: 'Trekking' };
-  const symbols = { natura: '✳', mare: '≈', borghi: '⌂', trekking: '▲' };
+  const labels = { natura: 'Natura', mare: 'Mare', borghi: 'Borghi', trekking: 'Trekking', monumenti: 'Monumenti', musei: 'Musei', arte: 'Arte' };
+  const symbols = { natura: '✳', mare: '≈', borghi: '⌂', trekking: '▲', monumenti: '▥', musei: '◈', arte: '✦' };
   const state = { all: [], visible: [], selectedId: null, category: 'tutti', query: '', demo: true, markers: new Map(), storiesByWaypoint: new Map(), photoIndex: 0, currentLayer: 'osm', editingId: null, retainedPhotos: [], saving: false, picking: false };
   let map;
   let markersGroup;
@@ -276,27 +276,6 @@
     renderMarkers();
   }
 
-  function downloadGeoJSON() {
-    const collection = {
-      type: 'FeatureCollection',
-      name: 'atlante-waypoints',
-      features: state.visible.map(place => ({
-        type: 'Feature',
-        geometry: { type: 'Point', coordinates: [place.lon, place.lat] },
-        properties: { id: place.id, title: place.title, area: place.area, category: place.category, visited_at: place.visited_at, description: place.description, photos: place.photos }
-      }))
-    };
-    const objectUrl = URL.createObjectURL(new Blob([JSON.stringify(collection, null, 2)], { type: 'application/geo+json' }));
-    const link = document.createElement('a');
-    link.href = objectUrl;
-    link.download = 'atlante-waypoints.geojson';
-    document.body.append(link);
-    link.click();
-    link.remove();
-    setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
-    showToast(`${state.visible.length} waypoint esportati in GeoJSON`);
-  }
-
   function locateMe() {
     if (!navigator.geolocation) { showToast('Geolocalizzazione non disponibile in questo browser.'); return; }
     showToast('Ricerca della tua posizione…');
@@ -493,14 +472,14 @@
         state.all = (data || []).map(row => toWaypoint(row)).filter(Boolean);
         await loadRelatedStories();
         if (!state.demo) {
-          $('dataStatus').textContent = window.atlasAuth?.editor ? 'Area editor · bozze e pubblicati' : 'Dati pubblicati su Supabase';
+          $('dataStatus').textContent = window.atlasAuth?.editor ? 'Area editor · bozze e pubblicati' : 'Luoghi e storie da scoprire';
           document.querySelector('.data-state').classList.add('connected');
         } else {
           $('dataStatus').textContent = 'Atlante in preparazione · luoghi dimostrativi';
         }
       } catch (error) {
         console.error('Caricamento Supabase:', error);
-        $('dataStatus').textContent = 'Supabase non raggiungibile · demo';
+        $('dataStatus').textContent = 'Luoghi temporaneamente non disponibili';
         showToast('Errore Supabase: visualizzo i waypoint di esempio.');
       }
     }
@@ -554,7 +533,6 @@
       try { await navigator.clipboard.writeText(`${place.lat}, ${place.lon}`); showToast('Coordinate copiate negli appunti.'); }
       catch { showToast(`${place.lat}, ${place.lon}`); }
     });
-    $('exportButton').addEventListener('click', downloadGeoJSON);
     $('aboutButton').addEventListener('click', () => $('infoDialog').showModal());
     $('addButton').addEventListener('click', () => openWaypointEditor());
     $('editPlaceButton').addEventListener('click', () => openWaypointEditor(state.selectedId));

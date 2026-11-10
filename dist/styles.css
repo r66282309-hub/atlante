@@ -34,3 +34,10 @@ button{cursor:pointer}
 @media(max-width:760px){.atlas-nav{order:2;flex:0 0 auto;padding:9px 20px;background:#f8f7f1}.sidebar-content{order:3}.sidebar-footer{order:4}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{transition:none!important;scroll-behavior:auto!important}}
 .place-stories{margin:0 0 22px;border-top:1px solid #e9ece5;padding-top:17px}.place-stories[hidden]{display:none!important}.place-stories h3{font-size:9px;letter-spacing:1.45px;color:#ad8063;font-weight:800;margin:0 0 11px}.place-stories-list{display:flex;flex-direction:column;gap:7px}.place-story-link{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 13px;border:1px solid #dfe9dc;border-radius:9px;background:#eff5ed;color:#315943;text-decoration:none;font-size:12px;font-weight:700;line-height:1.4;transition:background .2s,border-color .2s,transform .2s}.place-story-link:hover{background:#e4f1e1;border-color:#a6c7a6;transform:translateX(2px)}.place-story-link span:first-child{display:flex;flex-direction:column;gap:3px;min-width:0}.place-story-link small{color:#b37958;font-size:8px;letter-spacing:1px;font-weight:800}.place-story-arrow{font-size:17px;color:#82a48a;flex:0 0 auto}
+
+/* Categorie culturali dell'Atlante: una tinta riconoscibile per ogni luogo. */
+.atlas-marker.monumenti{background:#a5764e}
+.atlas-marker.musei{background:#655e8b}
+.atlas-marker.arte{background:#b66e83}
+/* Nessun pulsante esportazione nella homepage: l'unico comando è editor-only. */
+.sidebar-footer .footer-actions>.add-button{width:100%}
