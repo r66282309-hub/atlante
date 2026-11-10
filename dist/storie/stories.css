@@ -105,3 +105,45 @@
 .imagekit-video-fullscreen:hover{background:rgba(24,48,38,.92)}
 .imagekit-frame:fullscreen{border-radius:0}
 @media(max-width:760px){.imagekit-play-icon{width:54px;height:54px;font-size:23px}}
+
+/* Quiet paper-like background for the full Geostoria, without obscuring text. */
+.story-paper{
+  background-color:#fffefa;
+  background-image:
+    radial-gradient(ellipse 48% 24% at 100% 10%,rgba(158,186,161,.095),transparent 100%),
+    radial-gradient(ellipse 36% 30% at 0% 72%,rgba(191,163,126,.078),transparent 100%),
+    repeating-linear-gradient(0deg,rgba(70,105,76,.012) 0 1px,transparent 1px 20px);
+}
+.story-heading-area{background:linear-gradient(175deg,rgba(243,248,241,.15),transparent 65%)}
+
+/* Separator blocks: understated marks that respect the story's width and alignment. */
+.story-block.separator-block{margin-bottom:12px}
+.story-block.is-preview.separator-block{margin:7px 0 15px}
+.story-decorative-separator{display:flex;align-items:center;justify-content:center;gap:14px;min-height:59px;padding:14px 8px;color:#9cae9e;opacity:.82}
+.story-decorative-separator::before,.story-decorative-separator::after{content:"";height:1px;min-width:8px;max-width:170px;flex:1}
+.story-decorative-separator::before{background:linear-gradient(90deg,transparent,rgba(132,162,140,.65))}
+.story-decorative-separator::after{background:linear-gradient(90deg,rgba(132,162,140,.65),transparent)}
+.story-decorative-separator .separator-mark{display:block;min-width:16px;text-align:center;font:normal 17px/1 "DM Serif Display",Georgia,serif;color:#9cac9e}
+.story-decorative-separator.style-line::before,.story-decorative-separator.style-line::after{max-width:90px}
+.story-decorative-separator.style-line .separator-mark{min-width:0}
+.story-decorative-separator.style-dots{gap:10px}
+.story-decorative-separator.style-dots::before,.story-decorative-separator.style-dots::after{max-width:90px}
+.story-decorative-separator.style-dots .separator-mark{font:normal 17px/1 Georgia,serif;letter-spacing:5px;color:#b5a083;white-space:nowrap}
+
+/* Markdown shortcuts act on the selected text, keeping the source editable. */
+.markdown-format-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:7px 10px;margin:0 0 10px;padding:8px 9px;border:1px solid #e1e9dc;border-radius:8px;background:linear-gradient(110deg,rgba(244,248,241,.9),rgba(255,254,249,.95))}
+.markdown-toolbar-group{display:flex;align-items:center;gap:4px;flex-wrap:nowrap}
+.markdown-toolbar-group>button:not(.markdown-color-swatch){width:29px;height:29px;padding:0;border:1px solid transparent;border-radius:6px;background:transparent;color:#5e7b65;font-size:13px;cursor:pointer}
+.markdown-toolbar-group>button:not(.markdown-color-swatch):hover{background:#e5eee4;border-color:#d2e0d1}
+.markdown-bold{font-weight:900}.markdown-italic{font-style:italic;font-family:Georgia,serif}.markdown-strike{text-decoration:line-through}
+.markdown-font-select{max-width:135px;height:30px;border:1px solid #d9e4d7;border-radius:6px;background:#fff;color:#5b7461;font-size:10px;padding:0 6px;outline-offset:2px}
+.markdown-color-group{gap:5px}
+.markdown-color-swatch{width:21px;height:21px;padding:0;border:2px solid #fff;border-radius:50%;background:var(--swatch);box-shadow:0 0 0 1px rgba(80,105,88,.25);cursor:pointer}
+.markdown-color-swatch:hover{transform:scale(1.13);box-shadow:0 0 0 2px rgba(80,105,88,.4)}
+.markdown-format-toolbar button:focus-visible,.markdown-format-toolbar select:focus-visible{outline:2px solid #7fa98b;outline-offset:2px}
+.preview-markdown .atlas-sans,.preview-heading .atlas-sans{font-family:"DM Sans",sans-serif}
+.preview-markdown .atlas-serif,.preview-heading .atlas-serif{font-family:"DM Serif Display",Georgia,serif}
+.preview-markdown .atlas-script,.preview-heading .atlas-script{font-family:"Cormorant Garamond",Georgia,serif;font-style:italic;font-weight:500;font-size:1.17em;letter-spacing:.015em}
+.preview-markdown span[style*="color:"] strong,.preview-markdown span[style*="color:"] a{color:inherit}
+.preview-markdown del{text-decoration:line-through;opacity:.78}
+@media(max-width:760px){.markdown-format-toolbar{gap:7px}.markdown-font-select{max-width:125px}.story-decorative-separator{min-height:48px;padding:9px 4px}}

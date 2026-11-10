@@ -3,9 +3,9 @@
 
   const $ = id => document.getElementById(id);
   const config = window.ATLAS_CONFIG;
-  const TYPES = ['heading', 'paragraph', 'waypoint', 'image', 'video', 'map'];
-  const TYPE_NAMES = { heading: 'Titolo', paragraph: 'Testo', waypoint: 'Waypoint', image: 'Fotografia', video: 'Video', map: 'Mini-mappa' };
-  const TYPE_ICONS = { heading: 'T', paragraph: '≡', waypoint: '⌖', image: '▧', video: '▶', map: '◇' };
+  const TYPES = ['heading', 'paragraph', 'waypoint', 'image', 'video', 'separator', 'map'];
+  const TYPE_NAMES = { heading: 'Titolo', paragraph: 'Testo', waypoint: 'Waypoint', image: 'Fotografia', video: 'Video', separator: 'Separatore', map: 'Mini-mappa' };
+  const TYPE_ICONS = { heading: 'T', paragraph: '≡', waypoint: '⌖', image: '▧', video: '▶', separator: '✳', map: '◇' };
   const state = { stories: [], current: null, waypoints: [], localStories: [], preview: false, maps: [], saveTimer: null, savingPromise: null, dirty: false, revision: 0, pendingImageId: null, storageError: false };
   let editorInitialized = false;
   let authChecked = false;
@@ -19,33 +19,49 @@
   const clone = value => structuredClone(value);
   const asText = (value, limit = 20000) => String(value ?? '').slice(0, limit);
 
-  // Render Markdown as DOM nodes, never as untrusted HTML. Existing plain-text
-  // paragraphs still work, while formatted stories can share the same field.
-  function appendMarkdownInline(parent, source) {
+  // Safe Markdown extensions: inline font and color spans are created as DOM
+  // nodes from a small allowlist. Arbitrary HTML is always displayed as text.
+  function appendMarkdownInline(parent, source, depth = 0) {
     const input = String(source ?? '');
-    const tokens = /\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)|\*\*([^*\n]+)\*\*|__([^_\n]+)__|`([^`\n]+)`|\*([^*\n]+)\*|_([^_\n]+)_/g;
+    if (depth > 12) { parent.append(document.createTextNode(input)); return; }
+    const tokens = /<span class="atlas-(sans|serif|script)">|<span style="color:\s*(#[0-9a-fA-F]{6})">|<\/span>|\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)|\*\*([^*\n]+)\*\*|__([^_\n]+)__|~~([^~\n]+)~~|`([^`\n]+)`|\*([^*\n]+)\*|_([^_\n]+)_/g;
+    const stack = [parent];
+    const active = () => stack[stack.length - 1];
     let offset = 0;
     for (const match of input.matchAll(tokens)) {
-      parent.append(document.createTextNode(input.slice(offset, match.index)));
+      active().append(document.createTextNode(input.slice(offset, match.index)));
       let node;
-      if (match[1] !== undefined) {
+      if (match[1] !== undefined || match[2] !== undefined) {
+        node = document.createElement('span');
+        if (match[1] !== undefined) node.className = 'atlas-' + match[1];
+        else node.style.color = match[2];
+        active().append(node);
+        stack.push(node);
+      } else if (match[0] === '</span>') {
+        if (stack.length > 1) stack.pop();
+        else active().append(document.createTextNode(match[0]));
+      } else if (match[3] !== undefined) {
         try {
-          const url = new URL(match[2]);
+          const url = new URL(match[4]);
           if (!['http:', 'https:'].includes(url.protocol)) throw new Error('URL non valido');
           node = document.createElement('a');
           node.href = url.href;
           node.target = '_blank';
           node.rel = 'noopener noreferrer';
-          node.textContent = match[1];
+          appendMarkdownInline(node, match[3], depth + 1);
         } catch { node = document.createTextNode(match[0]); }
+        active().append(node);
       } else {
-        node = document.createElement(match[5] !== undefined ? 'code' : (match[3] !== undefined || match[4] !== undefined) ? 'strong' : 'em');
-        node.textContent = match[3] ?? match[4] ?? match[5] ?? match[6] ?? match[7];
+        const tag = match[8] !== undefined ? 'code' : match[7] !== undefined ? 'del' : (match[5] !== undefined || match[6] !== undefined) ? 'strong' : 'em';
+        node = document.createElement(tag);
+        const value = match[5] ?? match[6] ?? match[7] ?? match[8] ?? match[9] ?? match[10];
+        if (tag === 'code') node.textContent = value;
+        else appendMarkdownInline(node, value, depth + 1);
+        active().append(node);
       }
-      parent.append(node);
       offset = match.index + match[0].length;
     }
-    parent.append(document.createTextNode(input.slice(offset)));
+    active().append(document.createTextNode(input.slice(offset)));
   }
 
   function renderMarkdown(source) {
@@ -548,6 +564,81 @@
     return wrap;
   }
 
+  function makeMarkdownToolbar(block, field) {
+    const toolbar = document.createElement('div');
+    toolbar.className = 'markdown-format-toolbar';
+    toolbar.setAttribute('role', 'toolbar');
+    toolbar.setAttribute('aria-label', 'Formattazione Markdown del testo selezionato');
+
+    let selection = null;
+    const remember = () => { selection = { start: field.selectionStart, end: field.selectionEnd }; };
+    ['select', 'keyup', 'mouseup', 'input'].forEach(event => field.addEventListener(event, remember));
+
+    const wrapSelected = (prefix, suffix, fallback = 'testo') => {
+      const start = Math.min(field.value.length, selection?.start ?? field.selectionStart ?? field.value.length);
+      const end = Math.min(field.value.length, selection?.end ?? field.selectionEnd ?? start);
+      const chosen = field.value.slice(start, end) || fallback;
+      field.setRangeText(prefix + chosen + suffix, start, end, 'end');
+      block.text = field.value;
+      field.focus({ preventScroll: true });
+      field.setSelectionRange(start + prefix.length, start + prefix.length + chosen.length);
+      remember();
+      queueSave();
+    };
+
+    const addButton = (parent, label, title, prefix, suffix, className = '') => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = className;
+      button.textContent = label;
+      button.title = title;
+      button.setAttribute('aria-label', title);
+      button.addEventListener('mousedown', event => event.preventDefault());
+      button.addEventListener('click', () => wrapSelected(prefix, suffix));
+      parent.append(button);
+    };
+
+    const formats = document.createElement('div');
+    formats.className = 'markdown-toolbar-group';
+    addButton(formats, 'B', 'Grassetto · **testo**', '**', '**', 'markdown-bold');
+    addButton(formats, 'I', 'Corsivo · *testo*', '*', '*', 'markdown-italic');
+    addButton(formats, 'S', 'Barrato · ~~testo~~', '~~', '~~', 'markdown-strike');
+    addButton(formats, '⌁', 'Collegamento Markdown', '[', '](https://esempio.it)', 'markdown-link');
+    toolbar.append(formats);
+
+    const fonts = document.createElement('select');
+    fonts.className = 'markdown-font-select';
+    fonts.setAttribute('aria-label', 'Carattere del testo selezionato');
+    for (const [value, name] of [['', 'Carattere…'], ['sans', 'Moderno'], ['serif', 'Editoriale'], ['script', 'Corsivo elegante']]) {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = name;
+      fonts.append(option);
+    }
+    fonts.addEventListener('change', () => {
+      if (fonts.value) wrapSelected('<span class="atlas-' + fonts.value + '">', '</span>');
+      fonts.value = '';
+    });
+    toolbar.append(fonts);
+
+    const colors = document.createElement('div');
+    colors.className = 'markdown-toolbar-group markdown-color-group';
+    colors.setAttribute('aria-label', 'Colori del testo');
+    for (const [name, color] of [['Bosco', '#315D47'], ['Terracotta', '#A5664F'], ['Ardesia', '#526F84'], ['Ocra', '#A0783A'], ['Grafite', '#3C4A43']]) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'markdown-color-swatch';
+      button.title = 'Colore ' + name + ' sul testo selezionato';
+      button.setAttribute('aria-label', button.title);
+      button.style.setProperty('--swatch', color);
+      button.addEventListener('mousedown', event => event.preventDefault());
+      button.addEventListener('click', () => wrapSelected('<span style="color:' + color + '">', '</span>'));
+      colors.append(button);
+    }
+    toolbar.append(colors);
+    return toolbar;
+  }
+
   function blockTitle(block) {
     switch (block.type) {
       case 'heading': return block.text || 'Nuovo titolo';
@@ -555,6 +646,7 @@
       case 'waypoint': return state.waypoints.find(point => String(point.id) === block.waypointId)?.title || 'Waypoint';
       case 'image': return block.caption || 'Fotografia';
       case 'video': return block.caption || 'Video';
+      case 'separator': return 'Separatore · ' + ({ line: 'Linea', ornament: 'Ornamento', dots: 'Puntini' }[block.style] || 'Ornamento');
       case 'map': return block.caption || 'Mini-mappa';
       default: return 'Blocco';
     }
@@ -718,6 +810,21 @@
     return container;
   }
 
+  function separatorDisplay(style) {
+    const allowed = ['line', 'ornament', 'dots'];
+    const variant = allowed.includes(style) ? style : 'ornament';
+    const separator = document.createElement('div');
+    separator.className = 'story-decorative-separator style-' + variant;
+    separator.setAttribute('role', 'separator');
+    separator.setAttribute('aria-label', 'Separatore decorativo');
+    const mark = document.createElement('span');
+    mark.className = 'separator-mark';
+    mark.setAttribute('aria-hidden', 'true');
+    mark.textContent = variant === 'ornament' ? '✳' : variant === 'dots' ? '• • •' : '';
+    separator.append(mark);
+    return separator;
+  }
+
   function makeMiniMap(block) {
     const map = document.createElement('div');
     map.className = 'mini-map';
@@ -822,6 +929,7 @@
     const preview = state.preview;
     const article = document.createElement('section');
     article.className = `story-block${preview ? ' is-preview' : ''}`;
+    if (block.type === 'separator') article.classList.add('separator-block');
     article.id = `block-${block.id}`;
     applyBlockLayout(article, block);
     if (!preview) {
@@ -856,11 +964,13 @@
         if (preview) {
           const h = document.createElement('h2');
           h.className = 'preview-heading';
-          h.textContent = block.text || 'Nuova sezione';
+          appendMarkdownInline(h, block.text || 'Nuova sezione');
           content.append(h);
         } else {
           const field = makeControl('TITOLO DELLA SEZIONE', { value: block.text, placeholder: 'Il titolo della sezione…', onChange: value => { block.text = value; queueSave(); } });
-          field.querySelector('input').classList.add('heading-field');
+          const input = field.querySelector('input');
+          input.classList.add('heading-field');
+          input.before(makeMarkdownToolbar(block, input));
           content.append(field);
         }
         break;
@@ -869,10 +979,13 @@
         if (preview) {
           content.append(renderMarkdown(block.text));
         } else {
-          content.append(makeControl('IL RACCONTO · MARKDOWN', { kind: 'textarea', rows: 5, value: block.text, placeholder: 'Scrivi qui… Puoi usare ## Titolo, **grassetto**, elenchi e link.', onChange: value => { block.text = value; queueSave(); } }));
+          const editor = makeControl('IL RACCONTO · MARKDOWN', { kind: 'textarea', rows: 5, value: block.text, placeholder: 'Scrivi qui… Puoi usare ## Titolo, **grassetto**, elenchi e link.', onChange: value => { block.text = value; queueSave(); } });
+          const textarea = editor.querySelector('textarea');
+          textarea.before(makeMarkdownToolbar(block, textarea));
+          content.append(editor);
           const hint = document.createElement('p');
           hint.className = 'markdown-editor-hint';
-          hint.textContent = 'Markdown: ## Titolo  ·  **grassetto**  ·  *corsivo*  ·  - elenco  ·  --- separatore  ·  [link](https://…)';
+          hint.textContent = 'Seleziona una frase e usa la barra sopra: i comandi inseriscono Markdown (e span sicuri per colori e caratteri).';
           content.append(hint);
         }
         break;
@@ -916,6 +1029,17 @@
         content.append(media);
         if (preview) appendCaption(content, block.caption);
         else content.append(makeControl('DIDASCALIA', { value: block.caption, placeholder: 'Una nota sul video…', onChange: value => { block.caption = value; queueSave(); } }));
+        break;
+      }
+      case 'separator': {
+        if (!preview) {
+          content.append(makeControl('STILE DEL SEPARATORE', {
+            kind: 'select', value: block.style || 'ornament',
+            options: [{ value: 'line', label: 'Linea sottile' }, { value: 'ornament', label: 'Piccolo ornamento' }, { value: 'dots', label: 'Tre puntini' }],
+            onChange: value => { block.style = value; queueSave(); renderBlocks(); }
+          }));
+        }
+        content.append(separatorDisplay(block.style));
         break;
       }
       case 'map': {
@@ -1014,6 +1138,7 @@
       case 'waypoint': return { ...common, waypointId: String(state.waypoints[0]?.id || ''), caption: '' };
       case 'image': return { ...common, src: '', caption: '' };
       case 'video': return { ...common, url: '', caption: '' };
+      case 'separator': return { ...common, style: 'ornament' };
       case 'map': return { ...common, lat: Number(state.waypoints[0]?.lat || 40.08), lon: Number(state.waypoints[0]?.lon || 9.04), zoom: 11, basemap: 'osm', caption: '' };
       default: return { ...common, text: '' };
     }
@@ -1143,6 +1268,7 @@
       if (item.type === 'waypoint') { block.waypointId = asText(item.waypointId, 100); block.caption = asText(item.caption, 1000); }
       if (item.type === 'image') { block.src = imageUrl(item.src); block.caption = asText(item.caption, 1000); }
       if (item.type === 'video') { block.url = (youtubeId(item.url) || imageKitVideoUrl(item.url)) ? asText(item.url, 500) : ''; block.caption = asText(item.caption, 1000); }
+      if (item.type === 'separator') block.style = ['line', 'ornament', 'dots'].includes(item.style) ? item.style : 'ornament';
       if (item.type === 'map') {
         block.lat = Number(item.lat) >= -90 && Number(item.lat) <= 90 ? Number(item.lat) : 40.08;
         block.lon = Number(item.lon) >= -180 && Number(item.lon) <= 180 ? Number(item.lon) : 9.04;

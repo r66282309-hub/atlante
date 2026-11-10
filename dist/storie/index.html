@@ -8,15 +8,15 @@
     <title>Geostorie — Atlante</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Serif+Display:ital@0;1&family=Cormorant+Garamond:ital,wght@0,500;1,500&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="../styles.css" />
     <link rel="stylesheet" href="../auth.css" />
-    <link rel="stylesheet" href="./stories.css?v=20261110-imagekit" />
+    <link rel="stylesheet" href="./stories.css?v=20261110-decor" />
     <script defer src="../config.js"></script>
     <script defer src="../auth.js?v=20261109-login2"></script>
     <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-    <script defer src="./stories.js?v=20261110-imagekit"></script>
+    <script defer src="./stories.js?v=20261110-decor"></script>
   </head>
   <body class="story-body">
     <div class="story-app" id="storyApp">
@@ -101,6 +101,7 @@
             <button type="button" data-add="waypoint"><span class="picker-icon point-icon">⌖</span><span><strong>Waypoint</strong><small>Luoghi dal tuo Atlante</small></span><span class="picker-plus">＋</span></button>
             <button type="button" data-add="image"><span class="picker-icon image-icon">▧</span><span><strong>Fotografia</strong><small>Dal computer o via URL</small></span><span class="picker-plus">＋</span></button>
             <button type="button" data-add="video"><span class="picker-icon video-icon">▶</span><span><strong>Video</strong><small>YouTube o MP4 ImageKit</small></span><span class="picker-plus">＋</span></button>
+            <button type="button" data-add="separator"><span class="picker-icon separator-icon">✳</span><span><strong>Separatore</strong><small>Linea, ornamento o puntini</small></span><span class="picker-plus">＋</span></button>
             <button type="button" data-add="map"><span class="picker-icon map-icon">◇</span><span><strong>Mini-mappa</strong><small>Cartografia Leaflet</small></span><span class="picker-plus">＋</span></button>
           </div>
           <div class="tool-divider"></div>
@@ -125,6 +126,7 @@
         <button type="button" data-add="waypoint"><span>⌖</span>Waypoint</button>
         <button type="button" data-add="image"><span>▧</span>Fotografia</button>
         <button type="button" data-add="video"><span>▶</span>Video</button>
+        <button type="button" data-add="separator"><span>✳</span>Separatore</button>
         <button type="button" data-add="map"><span>◇</span>Mini-mappa</button>
       </div>
     </dialog>
