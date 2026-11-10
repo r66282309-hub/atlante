@@ -598,7 +598,10 @@
     $('soundtrackListenerControls').hidden = !url;
     $('soundtrackEditorControls').hidden = !isEditor();
     $('soundtrackRemoveButton').hidden = !url;
-    $('soundtrackStatus').textContent = url ? 'Colonna sonora' : 'Nessuna traccia associata';
+    const soundtrackStatus = $('soundtrackStatus');
+    soundtrackStatus.textContent = url ? 'Colonna sonora' : 'Nessuna traccia associata';
+    // Hide technical soundtrack metadata from the published story and preview.
+    soundtrackStatus.hidden = Boolean(url) && (state.preview || !isEditor());
     $('soundtrackPlayButton').textContent = audio.paused ? '▶ Ascolta' : 'Ⅱ Pausa';
     $('soundtrackMuteButton').textContent = audio.muted ? '🔇 Riattiva audio' : '🔊 Mute';
     $('soundtrackMuteButton').setAttribute('aria-pressed', String(audio.muted));
