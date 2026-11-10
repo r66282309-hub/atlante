@@ -667,11 +667,103 @@
     return map;
   }
 
+
+  // Presentation settings belong to each block in the existing JSONB 'blocks'
+  // value, so old stories keep working and Supabase needs no schema change.
+  const BLOCK_LAYOUT_CHOICES = {
+    width: [['full', '100%'], ['wide', '75%'], ['half', '50%']],
+    align: [['left', 'Sinistra'], ['center', 'Centro'], ['right', 'Destra']],
+    background: [['none', 'Nessuno'], ['mist', 'Nebbia'], ['sage', 'Salvia'], ['sand', 'Sabbia'], ['sky', 'Cielo']],
+    motion: [['rise', 'Scorrimento lieve'], ['fade', 'Dissolvenza'], ['none', 'Nessuna']]
+  };
+  const BLOCK_LAYOUT_DEFAULTS = { width: 'full', align: 'left', background: 'none', motion: 'rise' };
+
+  function normalizeBlockLayout(value) {
+    const raw = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    const layout = {};
+    for (const [key, options] of Object.entries(BLOCK_LAYOUT_CHOICES)) {
+      layout[key] = options.some(([id]) => id === raw[key]) ? raw[key] : BLOCK_LAYOUT_DEFAULTS[key];
+    }
+    return layout;
+  }
+
+  function applyBlockLayout(article, block) {
+    const layout = normalizeBlockLayout(block.layout);
+    article.dataset.blockWidth = layout.width;
+    article.dataset.blockAlign = layout.align;
+    article.dataset.blockBackground = layout.background;
+    article.dataset.blockMotion = layout.motion;
+  }
+
+  function makeBlockAppearancePanel(article, block) {
+    const details = document.createElement('details');
+    details.className = 'block-layout-panel';
+    const summary = document.createElement('summary');
+    const getLabel = (key, choice) => BLOCK_LAYOUT_CHOICES[key].find(([id]) => id === choice)?.[1] || choice;
+    const refreshSummary = () => {
+      const layout = normalizeBlockLayout(block.layout);
+      summary.textContent = `Aspetto · ${getLabel('width', layout.width)} · ${getLabel('align', layout.align)} · ${getLabel('background', layout.background)}`;
+    };
+    refreshSummary();
+    const controls = document.createElement('div');
+    controls.className = 'block-layout-fields';
+    for (const [key, caption] of [['width', 'LARGHEZZA'], ['align', 'ALLINEAMENTO'], ['background', 'SFONDO'], ['motion', 'ANIMAZIONE']]) {
+      const label = document.createElement('label');
+      const name = document.createElement('span');
+      name.textContent = caption;
+      const select = document.createElement('select');
+      select.className = 'block-layout-select';
+      for (const [value, title] of BLOCK_LAYOUT_CHOICES[key]) {
+        const option = document.createElement('option');
+        option.value = value;
+        option.textContent = title;
+        select.append(option);
+      }
+      select.value = normalizeBlockLayout(block.layout)[key];
+      select.addEventListener('change', () => {
+        block.layout = { ...normalizeBlockLayout(block.layout), [key]: select.value };
+        applyBlockLayout(article, block);
+        refreshSummary();
+        queueSave();
+        if (key === 'width') requestAnimationFrame(() => state.maps.forEach(map => map.invalidateSize()));
+      });
+      label.append(name, select);
+      controls.append(label);
+    }
+    const tip = document.createElement('p');
+    tip.className = 'block-layout-tip';
+    tip.textContent = 'Due blocchi consecutivi al 50% si affiancano. Su schermi piccoli tornano in colonna.';
+    details.append(summary, controls, tip);
+    return details;
+  }
+
+  function initializeBlockReveals(container) {
+    state.revealObserver?.disconnect();
+    state.revealObserver = null;
+    if (!state.preview || typeof IntersectionObserver !== 'function' || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    const blocks = [...container.querySelectorAll('.story-block[data-block-motion]:not([data-block-motion="none"])')];
+    if (!blocks.length) return;
+    const observer = new IntersectionObserver(entries => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        entry.target.classList.add('story-block-revealed');
+        observer.unobserve(entry.target);
+      }
+    }, { threshold: .08, rootMargin: '0px 0px -20px 0px' });
+    state.revealObserver = observer;
+    blocks.forEach((block, index) => {
+      block.style.setProperty('--reveal-delay', `${index % 3 * 70}ms`);
+      block.classList.add('story-block-reveal');
+      observer.observe(block);
+    });
+  }
+
   function renderBlock(block, index) {
     const preview = state.preview;
     const article = document.createElement('section');
     article.className = `story-block${preview ? ' is-preview' : ''}`;
     article.id = `block-${block.id}`;
+    applyBlockLayout(article, block);
     if (!preview) {
       const bar = document.createElement('div');
       bar.className = 'block-toolbar';
@@ -694,6 +786,7 @@
       }
       bar.append(label, actions);
       article.append(bar);
+      article.append(makeBlockAppearancePanel(article, block));
     }
 
     const content = document.createElement('div');
@@ -819,7 +912,9 @@
     clearMiniMaps();
     const container = $('storyBlocks');
     container.replaceChildren();
+    container.classList.add('story-blocks-layout');
     state.current.blocks.forEach((block, index) => container.append(renderBlock(block, index)));
+    initializeBlockReveals(container);
     renderOutline();
     requestAnimationFrame(initializeMiniMaps);
   }
@@ -852,7 +947,7 @@
   }
 
   function defaultBlock(type) {
-    const common = { id: uid(), type };
+    const common = { id: uid(), type, layout: normalizeBlockLayout() };
     switch (type) {
       case 'heading': return { ...common, text: 'Una nuova sezione' };
       case 'paragraph': return { ...common, text: '' };
@@ -983,6 +1078,7 @@
     base.linkedWaypointIds = [...new Set((Array.isArray(raw.linkedWaypointIds) ? raw.linkedWaypointIds : []).filter(isUUID))];
     base.blocks = raw.blocks.slice(0, 150).filter(item => item && TYPES.includes(item.type)).map(item => {
       const block = defaultBlock(item.type);
+      block.layout = normalizeBlockLayout(item.layout);
       if (['heading', 'paragraph'].includes(item.type)) block.text = asText(item.text);
       if (item.type === 'waypoint') { block.waypointId = asText(item.waypointId, 100); block.caption = asText(item.caption, 1000); }
       if (item.type === 'image') { block.src = imageUrl(item.src); block.caption = asText(item.caption, 1000); }
