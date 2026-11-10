@@ -23,103 +23,84 @@
   // nodes from a small allowlist. Arbitrary HTML is always displayed as text.
   function appendMarkdownInline(parent, source, depth = 0) {
     const input = String(source ?? '');
-    if (depth > 12) { parent.append(document.createTextNode(input)); return; }
-    const tokens = /<span class="atlas-(sans|serif|script)">|<span style="color:\s*(#[0-9a-fA-F]{6})">|<\/span>|\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)|\*\*([^*\n]+)\*\*|__([^_\n]+)__|~~([^~\n]+)~~|`([^`\n]+)`|\*([^*\n]+)\*|_([^_\n]+)_/g;
-    const stack = [parent];
-    const active = () => stack[stack.length - 1];
-    let offset = 0;
-    for (const match of input.matchAll(tokens)) {
-      active().append(document.createTextNode(input.slice(offset, match.index)));
-      let node;
-      if (match[1] !== undefined || match[2] !== undefined) {
-        node = document.createElement('span');
-        if (match[1] !== undefined) node.className = 'atlas-' + match[1];
-        else node.style.color = match[2];
-        active().append(node);
-        stack.push(node);
-      } else if (match[0] === '</span>') {
-        if (stack.length > 1) stack.pop();
-        else active().append(document.createTextNode(match[0]));
-      } else if (match[3] !== undefined) {
-        try {
-          const url = new URL(match[4]);
-          if (!['http:', 'https:'].includes(url.protocol)) throw new Error('URL non valido');
-          node = document.createElement('a');
-          node.href = url.href;
-          node.target = '_blank';
-          node.rel = 'noopener noreferrer';
-          appendMarkdownInline(node, match[3], depth + 1);
-        } catch { node = document.createTextNode(match[0]); }
-        active().append(node);
-      } else {
-        const tag = match[8] !== undefined ? 'code' : match[7] !== undefined ? 'del' : (match[5] !== undefined || match[6] !== undefined) ? 'strong' : 'em';
-        node = document.createElement(tag);
-        const value = match[5] ?? match[6] ?? match[7] ?? match[8] ?? match[9] ?? match[10];
-        if (tag === 'code') node.textContent = value;
-        else appendMarkdownInline(node, value, depth + 1);
-        active().append(node);
+    if (depth > 15) { parent.append(document.createTextNode(input)); return; }
+    const stack = [{ node: parent, marker: '' }];
+    let buffer = '';
+    const here = () => stack[stack.length - 1].node;
+    const flush = () => { if (buffer) { here().append(document.createTextNode(buffer)); buffer = ''; } };
+    const hasCloser = (marker, from) => {
+      for (let j = input.indexOf(marker, from); j >= 0; j = input.indexOf(marker, j + 1)) {
+        if ((marker === '*' || marker === '_') && (input[j - 1] === marker || input[j + 1] === marker)) continue;
+        return true;
       }
-      offset = match.index + match[0].length;
+      return false;
+    };
+    let i = 0;
+    while (i < input.length) {
+      const rest = input.slice(i);
+      const font = /^<span class="atlas-(sans|serif|script)">/.exec(rest);
+      const color = /^<span style="color:\s*(#[0-9a-fA-F]{6})">/.exec(rest);
+      if (font || color) {
+        flush();
+        const span = document.createElement('span');
+        if (font) span.className = 'atlas-' + font[1];
+        else span.style.color = color[1];
+        here().append(span);
+        stack.push({ node: span, marker: 'span' });
+        i += (font || color)[0].length;
+        continue;
+      }
+      if (rest.startsWith('</span>') && stack[stack.length - 1].marker === 'span') {
+        flush(); stack.pop(); i += 7; continue;
+      }
+      const link = /^\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/.exec(rest);
+      if (link) {
+        flush();
+        try {
+          const url = new URL(link[2]);
+          if (!['http:', 'https:'].includes(url.protocol)) throw Error('URL');
+          const a = document.createElement('a');
+          a.href = url.href; a.target = '_blank'; a.rel = 'noopener noreferrer';
+          appendMarkdownInline(a, link[1], depth + 1);
+          here().append(a);
+        } catch { here().append(document.createTextNode(link[0])); }
+        i += link[0].length; continue;
+      }
+      if (input.charCodeAt(i) === 96) {
+        const close = input.indexOf(String.fromCharCode(96), i + 1);
+        if (close > i && !input.slice(i + 1,close).includes('\n')) {
+          flush();
+          const code = document.createElement('code');
+          code.textContent = input.slice(i + 1,close);
+          here().append(code);
+          i = close + 1; continue;
+        }
+      }
+      let formatted = false;
+      for (const marker of ['**', '__', '~~', '*', '_']) {
+        if (!rest.startsWith(marker)) continue;
+        if (stack[stack.length - 1].marker === marker) {
+          flush(); stack.pop(); i += marker.length; formatted = true; break;
+        }
+        if (!hasCloser(marker, i + marker.length)) continue;
+        flush();
+        const node = document.createElement(marker === '~~' ? 'del' : marker.length === 2 ? 'strong' : 'em');
+        here().append(node);
+        stack.push({ node, marker });
+        i += marker.length; formatted = true; break;
+      }
+      if (formatted) continue;
+      if (input[i] === '\\' && /[*_~\\]/.test(input[i + 1] || '')) {
+        buffer += input[i + 1]; i += 2;
+      } else buffer += input[i++];
     }
-    active().append(document.createTextNode(input.slice(offset)));
+    flush();
   }
 
-  // A selected style can cover several lines or blank paragraphs.
-  // Render each line with balanced tags, without changing the stored Markdown.
   function normalizeMultilineFormatting(source) {
-    const input = String(source ?? '').replace(/\r\n?/g, '\n');
-    const fence = /^\s*```/;
-    const spanTag = /<span class="atlas-(?:sans|serif|script)">|<span style="color:\s*#[0-9a-fA-F]{6}">|<\/span>/g;
-    // Preserve existing Markdown. The legacy editor also allowed a single
-    // formatting wrapper to span multiple lines; balance it for each line,
-    // because headings, list items and paragraphs render in separate nodes.
-    const lines = input.split('\n');
-    let fenced = false;
-    const activeSpans = [];
-    const balanced = lines.map(line => {
-      if (fence.test(line)) { fenced = !fenced; return line; }
-      if (fenced) return line;
-      const existing = [...activeSpans];
-      const tokens = [...line.matchAll(spanTag)];
-      for (const match of tokens) {
-        if (match[0] === '</span>') {
-          if (activeSpans.length) activeSpans.pop();
-        } else activeSpans.push(match[0]);
-      }
-      // Do not insert artificial tags in empty lines, and never drop the
-      // original opening/closing tags: the adjacent lines may depend on them.
-      if (!line.replace(spanTag, '').trim()) return line;
-      const marker = /^(\s*(?:#{1,4}\s+|[-*+]\s+|\d+\.\s+|>\s?))/.exec(line)?.[0] || '';
-      const withStyles = marker + existing.join('') + line.slice(marker.length)
-        + '</span>'.repeat(activeSpans.length);
-      // A marker immediately after a style opener must stay outside it.
-      return withStyles.replace(
-        /^((?:<span class="atlas-(?:sans|serif|script)">|<span style="color:\s*#[0-9a-fA-F]{6}">)+)(\s*(?:#{1,4}\s+|[-*+]\s+|\d+\.\s+|>\s?))/,
-        (_, opening, blockMarker) => blockMarker + opening
-      );
-    });
-
-    // Legacy multiline bold/italic selections should retain formatting even
-    // across paragraph breaks. Rewrite only wrappers that actually contain
-    // newlines, and never modify fenced code blocks.
-    let result = balanced.join('\n');
-    const chunks = result.split(/(^\s*```[^\n]*$[\s\S]*?^\s*```[^\n]*$)/gm);
-    result = chunks.map(chunk => {
-      if (fence.test(chunk)) return chunk;
-      for (const [pattern, marker] of [
-        [/\*\*([^*]*\n[^*]*?)\*\*/g, '**'],
-        [/__([^_]*\n[^_]*?)__/g, '__'],
-        [/~~([^~]*\n[^~]*?)~~/g, '~~'],
-        [/(?<!\*)\*([^*\n]+(?:\n[^*\n]+)+)\*(?!\*)/g, '*'],
-        [/(?<!_)_([^_\n]+(?:\n[^_\n]+)+)_(?!_)/g, '_']
-      ]) {
-        chunk = chunk.replace(pattern, (match, body) =>
-          body.split('\n').map(line => line.trim() ? marker + line + marker : line).join('\n')
-        );
-      }
-      return chunk;
-    }).join('');
-    return result;
+    // Preserve nested Markdown literally. The old regex rewrite broke
+    // italic passages containing already-bold words.
+    return String(source ?? '').replace(/\r\n?/g, '\n');
   }
 
   function renderMarkdown(source) {
@@ -1033,11 +1014,7 @@
           appendMarkdownInline(h, block.text || 'Nuova sezione');
           content.append(h);
         } else {
-          const field = makeControl('TITOLO DELLA SEZIONE', { value: block.text, placeholder: 'Il titolo della sezione…', onChange: value => { block.text = value; queueSave(); } });
-          const input = field.querySelector('input');
-          input.classList.add('heading-field');
-          input.before(makeMarkdownToolbar(block, input));
-          content.append(field);
+          content.append(window.AtlasRichEditor.mount({ block, heading: true, renderMarkdown, appendMarkdownInline, queueSave }));
         }
         break;
       }
@@ -1045,14 +1022,7 @@
         if (preview) {
           content.append(renderMarkdown(block.text));
         } else {
-          const editor = makeControl('IL RACCONTO · MARKDOWN', { kind: 'textarea', rows: 5, value: block.text, placeholder: 'Scrivi qui… Puoi usare ## Titolo, **grassetto**, elenchi e link.', onChange: value => { block.text = value; queueSave(); } });
-          const textarea = editor.querySelector('textarea');
-          textarea.before(makeMarkdownToolbar(block, textarea));
-          content.append(editor);
-          const hint = document.createElement('p');
-          hint.className = 'markdown-editor-hint';
-          hint.textContent = 'Seleziona una frase e usa la barra sopra: i comandi inseriscono Markdown (e span sicuri per colori e caratteri).';
-          content.append(hint);
+          content.append(window.AtlasRichEditor.mount({ block, heading: false, renderMarkdown, appendMarkdownInline, queueSave }));
         }
         break;
       }
