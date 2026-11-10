@@ -67,39 +67,59 @@
   // A selected style can cover several lines or blank paragraphs.
   // Render each line with balanced tags, without changing the stored Markdown.
   function normalizeMultilineFormatting(source) {
-    let input = String(source ?? '').replace(/\r\n?/g, '\n');
-    for (const [pattern, marker] of [
-      [/\*\*([\s\S]*?)\*\*/g, '**'],
-      [/__([\s\S]*?)__/g, '__'],
-      [/~~([\s\S]*?)~~/g, '~~'],
-      [/(?<!\*)\*([^*\n]+(?:\n[^*\n]+)+)\*(?!\*)/g, '*'],
-      [/(?<!_)_([^_\n]+(?:\n[^_\n]+)+)_(?!_)/g, '_']
-    ]) {
-      input = input.replace(pattern, (whole, body) => body.includes('\n')
-        ? body.split('\n').map(line => line.trim() ? marker + line + marker : line).join('\n')
-        : whole);
-    }
-
-    const spans = /<span class="atlas-(?:sans|serif|script)">|<span style="color:\s*#[0-9a-fA-F]{6}">|<\/span>/g;
-    const active = [];
-    return input.split('\n').map(line => {
-      const before = active.slice();
-      for (const match of line.matchAll(spans)) {
+    const input = String(source ?? '').replace(/\r\n?/g, '\n');
+    const fence = /^\s*```/;
+    const spanTag = /<span class="atlas-(?:sans|serif|script)">|<span style="color:\s*#[0-9a-fA-F]{6}">|<\/span>/g;
+    // Preserve existing Markdown. The legacy editor also allowed a single
+    // formatting wrapper to span multiple lines; balance it for each line,
+    // because headings, list items and paragraphs render in separate nodes.
+    const lines = input.split('\n');
+    let fenced = false;
+    const activeSpans = [];
+    const balanced = lines.map(line => {
+      if (fence.test(line)) { fenced = !fenced; return line; }
+      if (fenced) return line;
+      const existing = [...activeSpans];
+      const tokens = [...line.matchAll(spanTag)];
+      for (const match of tokens) {
         if (match[0] === '</span>') {
-          if (active.length) active.pop();
-        } else active.push(match[0]);
+          if (activeSpans.length) activeSpans.pop();
+        } else activeSpans.push(match[0]);
       }
-      // Lines containing nothing but wrappers are not visible paragraphs.
-      if (!line.replace(spans, '').trim()) return line.replace(spans, '');
+      // Do not insert artificial tags in empty lines, and never drop the
+      // original opening/closing tags: the adjacent lines may depend on them.
+      if (!line.replace(spanTag, '').trim()) return line;
       const marker = /^(\s*(?:#{1,4}\s+|[-*+]\s+|\d+\.\s+|>\s?))/.exec(line)?.[0] || '';
-      const result = marker + before.join('') + line.slice(marker.length) + '</span>'.repeat(active.length);
-      // If an older selection wrapped a Markdown list or heading marker,
-      // keep the marker outside the style tag so it remains a block element.
-      return result.replace(
+      const withStyles = marker + existing.join('') + line.slice(marker.length)
+        + '</span>'.repeat(activeSpans.length);
+      // A marker immediately after a style opener must stay outside it.
+      return withStyles.replace(
         /^((?:<span class="atlas-(?:sans|serif|script)">|<span style="color:\s*#[0-9a-fA-F]{6}">)+)(\s*(?:#{1,4}\s+|[-*+]\s+|\d+\.\s+|>\s?))/,
         (_, opening, blockMarker) => blockMarker + opening
       );
-    }).join('\n');
+    });
+
+    // Legacy multiline bold/italic selections should retain formatting even
+    // across paragraph breaks. Rewrite only wrappers that actually contain
+    // newlines, and never modify fenced code blocks.
+    let result = balanced.join('\n');
+    const chunks = result.split(/(^\s*```[^\n]*$[\s\S]*?^\s*```[^\n]*$)/gm);
+    result = chunks.map(chunk => {
+      if (fence.test(chunk)) return chunk;
+      for (const [pattern, marker] of [
+        [/\*\*([^*]*\n[^*]*?)\*\*/g, '**'],
+        [/__([^_]*\n[^_]*?)__/g, '__'],
+        [/~~([^~]*\n[^~]*?)~~/g, '~~'],
+        [/(?<!\*)\*([^*\n]+(?:\n[^*\n]+)+)\*(?!\*)/g, '*'],
+        [/(?<!_)_([^_\n]+(?:\n[^_\n]+)+)_(?!_)/g, '_']
+      ]) {
+        chunk = chunk.replace(pattern, (match, body) =>
+          body.split('\n').map(line => line.trim() ? marker + line + marker : line).join('\n')
+        );
+      }
+      return chunk;
+    }).join('');
+    return result;
   }
 
   function renderMarkdown(source) {
