@@ -64,10 +64,48 @@
     active().append(document.createTextNode(input.slice(offset)));
   }
 
+  // A selected style can cover several lines or blank paragraphs.
+  // Render each line with balanced tags, without changing the stored Markdown.
+  function normalizeMultilineFormatting(source) {
+    let input = String(source ?? '').replace(/\r\n?/g, '\n');
+    for (const [pattern, marker] of [
+      [/\*\*([\s\S]*?)\*\*/g, '**'],
+      [/__([\s\S]*?)__/g, '__'],
+      [/~~([\s\S]*?)~~/g, '~~'],
+      [/(?<!\*)\*([^*\n]+(?:\n[^*\n]+)+)\*(?!\*)/g, '*'],
+      [/(?<!_)_([^_\n]+(?:\n[^_\n]+)+)_(?!_)/g, '_']
+    ]) {
+      input = input.replace(pattern, (whole, body) => body.includes('\n')
+        ? body.split('\n').map(line => line.trim() ? marker + line + marker : line).join('\n')
+        : whole);
+    }
+
+    const spans = /<span class="atlas-(?:sans|serif|script)">|<span style="color:\s*#[0-9a-fA-F]{6}">|<\/span>/g;
+    const active = [];
+    return input.split('\n').map(line => {
+      const before = active.slice();
+      for (const match of line.matchAll(spans)) {
+        if (match[0] === '</span>') {
+          if (active.length) active.pop();
+        } else active.push(match[0]);
+      }
+      // Lines containing nothing but wrappers are not visible paragraphs.
+      if (!line.replace(spans, '').trim()) return line.replace(spans, '');
+      const marker = /^(\s*(?:#{1,4}\s+|[-*+]\s+|\d+\.\s+|>\s?))/.exec(line)?.[0] || '';
+      const result = marker + before.join('') + line.slice(marker.length) + '</span>'.repeat(active.length);
+      // If an older selection wrapped a Markdown list or heading marker,
+      // keep the marker outside the style tag so it remains a block element.
+      return result.replace(
+        /^((?:<span class="atlas-(?:sans|serif|script)">|<span style="color:\s*#[0-9a-fA-F]{6}">)+)(\s*(?:#{1,4}\s+|[-*+]\s+|\d+\.\s+|>\s?))/,
+        (_, opening, blockMarker) => blockMarker + opening
+      );
+    }).join('\n');
+  }
+
   function renderMarkdown(source) {
     const root = document.createElement('div');
     root.className = 'preview-markdown';
-    const lines = String(source ?? '').replace(/\r\n?/g, '\n').split('\n');
+    const lines = normalizeMultilineFormatting(source).split('\n');
     const heading = line => /^(#{1,4})\s+(.+)$/.exec(line.trim());
     const divider = line => /^(?:-{3,}|\*{3,}|_{3,})$/.test(line.trim());
     const listItem = line => /^\s*([-*+]\s+|\d+\.\s+)(.+)$/.exec(line);
@@ -578,10 +616,18 @@
       const start = Math.min(field.value.length, selection?.start ?? field.selectionStart ?? field.value.length);
       const end = Math.min(field.value.length, selection?.end ?? field.selectionEnd ?? start);
       const chosen = field.value.slice(start, end) || fallback;
-      field.setRangeText(prefix + chosen + suffix, start, end, 'end');
+      const multiline = chosen.includes('\n');
+      const formatLine = line => {
+        if (!line.trim()) return line;
+        const marker = /^(\s*(?:#{1,4}\s+|[-*+]\s+|\d+\.\s+|>\s?))/.exec(line)?.[0] || '';
+        return marker + prefix + line.slice(marker.length) + suffix;
+      };
+      const replacement = multiline ? chosen.split('\n').map(formatLine).join('\n') : prefix + chosen + suffix;
+      field.setRangeText(replacement, start, end, 'end');
       block.text = field.value;
       field.focus({ preventScroll: true });
-      field.setSelectionRange(start + prefix.length, start + prefix.length + chosen.length);
+      if (multiline) field.setSelectionRange(start, start + replacement.length);
+      else field.setSelectionRange(start + prefix.length, start + prefix.length + chosen.length);
       remember();
       queueSave();
     };
