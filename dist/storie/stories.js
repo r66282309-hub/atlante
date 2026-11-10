@@ -245,7 +245,7 @@
 
   function blankStory() {
     const now = new Date().toISOString();
-    return { id: uid(), title: 'Una nuova geostoria', subtitle: '', kicker: 'DIARIO DI VIAGGIO', cover: '', published: false, created_at: now, updated_at: now, linkedWaypointIds: [], blocks: [{ id: uid(), type: 'paragraph', text: '' }] };
+    return { id: uid(), title: 'Una nuova geostoria', subtitle: '', kicker: 'DIARIO DI VIAGGIO', cover: '', soundtrack_url: '', published: false, created_at: now, updated_at: now, linkedWaypointIds: [], blocks: [{ id: uid(), type: 'paragraph', text: '' }] };
   }
 
   function exampleStory() {
@@ -326,7 +326,7 @@
       id: story.id, owner_id: window.atlasAuth.user.id,
       slug: `storia-${story.id}`,
       title: story.title.trim() || 'Senza titolo',
-      subtitle: story.subtitle || '', kicker: story.kicker || '', cover: story.cover || '',
+      subtitle: story.subtitle || '', kicker: story.kicker || '', cover: story.cover || '', soundtrack_url: story.soundtrack_url || '',
       blocks: story.blocks, published: Boolean(story.published)
     };
     const { error } = await client().from('geostories').upsert(payload, { onConflict: 'id' });
@@ -563,6 +563,123 @@
     } finally { button.disabled = false; }
   }
 
+  // Public soundtrack URLs: keep playable source links restricted to this
+  // project's audio bucket, rather than allowing arbitrary protocols.
+  function safeSoundtrackUrl(input) {
+    if (typeof input !== 'string' || !input) return '';
+    try {
+      const url = new URL(input);
+      const prefix = new URL(config.supabase.url);
+      if (url.protocol !== 'https:' || url.origin !== prefix.origin) return '';
+      if (!url.pathname.startsWith('/storage/v1/object/public/geostory-audio/')) return '';
+      if (!/\.mp3$/i.test(decodeURIComponent(url.pathname))) return '';
+      return url.href;
+    } catch { return ''; }
+  }
+
+  let activeSoundtrackStoryId = null;
+  function renderSoundtrack() {
+    const story = state.current;
+    const audio = $('storySoundtrackAudio');
+    const panel = $('storySoundtrackPanel');
+    const url = safeSoundtrackUrl(story?.soundtrack_url);
+    const changed = activeSoundtrackStoryId !== story?.id || audio.dataset.track !== url;
+    if (changed) {
+      audio.pause();
+      audio.removeAttribute('src');
+      audio.load();
+      audio.dataset.track = url;
+      activeSoundtrackStoryId = story?.id || null;
+      if (url) audio.src = url;
+      audio.muted = false;
+      audio.loop = true;
+    }
+    panel.hidden = !url && !isEditor();
+    $('soundtrackListenerControls').hidden = !url;
+    $('soundtrackEditorControls').hidden = !isEditor();
+    $('soundtrackRemoveButton').hidden = !url;
+    $('soundtrackStatus').textContent = url ? 'Colonna sonora · MP3 in loop' : 'Nessuna traccia associata';
+    $('soundtrackPlayButton').textContent = audio.paused ? '▶ Ascolta' : 'Ⅱ Pausa';
+    $('soundtrackMuteButton').textContent = audio.muted ? '🔇 Riattiva audio' : '🔊 Mute';
+    $('soundtrackMuteButton').setAttribute('aria-pressed', String(audio.muted));
+  }
+
+  async function uploadSoundtrack(file) {
+    if (!file || !isEditor() || !state.current) return;
+    const storyId = state.current.id;
+    const isMp3 = /\.mp3$/i.test(file.name) && ['audio/mpeg','audio/mp3','application/octet-stream',''].includes(file.type);
+    if (!isMp3) { notice('Scegli un file MP3 valido.'); return; }
+    if (!file.size || file.size > 20 * 1024 * 1024) {
+      notice('Il file MP3 deve essere inferiore a 20 MB.');
+      return;
+    }
+    const button = $('soundtrackUploadButton');
+    button.disabled = true;
+    try {
+      setSaveStatus('Caricamento musica MP3…',true);
+      const path = window.atlasAuth.user.id + '/geostories/' + storyId + '/' + uid() + '.mp3';
+      const bucket = client().storage.from('geostory-audio');
+      const { error } = await bucket.upload(path,file,{contentType:'audio/mpeg',upsert:false});
+      if (error) throw error;
+      const url = bucket.getPublicUrl(path).data.publicUrl;
+      if (!safeSoundtrackUrl(url)) throw new Error('URL audio non valido.');
+      if (state.current?.id !== storyId) {
+        notice('Musica caricata; torna alla storia originaria per associarla.');
+        return;
+      }
+      state.current.soundtrack_url = url;
+      queueSave();
+      renderSoundtrack();
+      if (await saveNow()) notice('Musica associata alla Geostoria. Avvio su richiesta, loop automatico.');
+    } catch (error) {
+      console.error('Errore MP3',error);
+      notice('Caricamento MP3 non riuscito: ' + (error.message || error));
+      setSaveStatus('Controlla il caricamento MP3');
+    } finally { button.disabled = false; }
+  }
+
+  function bindSoundtrackEvents() {
+    const audio = $('storySoundtrackAudio');
+    const play = $('soundtrackPlayButton');
+    const mute = $('soundtrackMuteButton');
+    const fileInput = $('soundtrackFileInput');
+    const upload = $('soundtrackUploadButton');
+    const remove = $('soundtrackRemoveButton');
+    play.addEventListener('click',async () => {
+      if (!audio.src) return;
+      if (!audio.paused) { audio.pause(); return; }
+      try { await audio.play(); }
+      catch (error) {
+        console.warn('Riproduzione audio non disponibile:',error);
+        notice('Il browser non ha avviato la musica: riprova con Ascolta.');
+      }
+    });
+    mute.addEventListener('click',() => {
+      audio.muted = !audio.muted;
+      renderSoundtrack();
+    });
+    for (const type of ['play','pause','ended','volumechange']) audio.addEventListener(type,() => {
+      play.textContent = audio.paused ? '▶ Ascolta' : 'Ⅱ Pausa';
+      mute.textContent = audio.muted ? '🔇 Riattiva audio' : '🔊 Mute';
+      mute.setAttribute('aria-pressed',String(audio.muted));
+    });
+    audio.addEventListener('error',() => {
+      if (audio.currentSrc) notice('Impossibile caricare il file MP3. Controlla che sia disponibile.');
+    });
+    upload.addEventListener('click',() => fileInput.click());
+    fileInput.addEventListener('change',event => {
+      void uploadSoundtrack(event.target.files?.[0]);
+      event.target.value = '';
+    });
+    remove.addEventListener('click',async () => {
+      if (!isEditor() || !state.current?.soundtrack_url) return;
+      state.current.soundtrack_url = '';
+      queueSave();
+      renderSoundtrack();
+      if (await saveNow()) notice('Colonna sonora rimossa dalla Geostoria.');
+    });
+  }
+
   function renderStory() {
     const preview = state.preview;
     $('storyDocument').hidden = false;
@@ -572,6 +689,7 @@
     $('previewIcon').textContent = preview ? '✎' : '◉';
     $('previewLabel').textContent = preview ? 'Modifica' : 'Anteprima';
     renderHeading();
+    renderSoundtrack();
     ['storyTitle', 'storySubtitle', 'storyKicker'].forEach(id => { $(id).readOnly = preview; });
     renderBlocks();
   }
@@ -1296,6 +1414,7 @@
     base.subtitle = asText(raw.subtitle, 400);
     base.kicker = asText(raw.kicker || 'GEOSTORIA IMPORTATA', 70);
     base.cover = imageUrl(raw.cover);
+    base.soundtrack_url = safeSoundtrackUrl(raw.soundtrack_url);
     base.linkedWaypointIds = [...new Set((Array.isArray(raw.linkedWaypointIds) ? raw.linkedWaypointIds : []).filter(isUUID))];
     base.blocks = raw.blocks.slice(0, 150).filter(item => item && TYPES.includes(item.type)).map(item => {
       const block = defaultBlock(item.type);
@@ -1439,6 +1558,8 @@
   function showEmptyStories(editor) {
     const stage = $('storyStage');
     $('storyDocument').hidden = true;
+    $('storySoundtrackAudio')?.pause();
+    $('storySoundtrackPanel').hidden = true;
     stage.querySelector('.story-access-gate')?.remove();
     const gate = document.createElement('section');
     gate.className = 'story-access-gate';
@@ -1464,6 +1585,7 @@
     authChecked = true;
     if (editorInitialized) return;
     editorInitialized = isEditor();
+    bindSoundtrackEvents();
     if (editorInitialized) bindEvents();
     else {
       $('newStoryButton').hidden = true;
@@ -1474,7 +1596,7 @@
     try {
       await loadWaypoints();
       if (!client()) throw new Error('Connessione Supabase non disponibile');
-      let query = client().from('geostories').select('id,title,subtitle,kicker,cover,blocks,published,created_at,updated_at').order('updated_at', { ascending: false });
+      let query = client().from('geostories').select('id,title,subtitle,kicker,cover,soundtrack_url,blocks,published,created_at,updated_at').order('updated_at', { ascending: false });
       if (!isEditor()) query = query.eq('published', true);
       const { data, error } = await query;
       if (error) throw error;

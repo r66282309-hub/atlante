@@ -12,12 +12,12 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="../styles.css" />
     <link rel="stylesheet" href="../auth.css" />
-    <link rel="stylesheet" href="./stories.css?v=20261110-rich" />
+    <link rel="stylesheet" href="./stories.css?v=20261110-audio" />
     <script defer src="../config.js"></script>
     <script defer src="../auth.js?v=20261109-login2"></script>
     <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
     <script defer src="./rich-editor.js?v=20261110-live"></script>
-    <script defer src="./stories.js?v=20261110-rich"></script>
+    <script defer src="./stories.js?v=20261110-audio"></script>
   </head>
   <body class="story-body">
     <div class="story-app" id="storyApp">
@@ -84,6 +84,22 @@
               <textarea id="storyTitle" class="story-title-input" aria-label="Titolo della geostoria" rows="2" placeholder="Dai un titolo alla tua geostoria" maxlength="180"></textarea>
               <textarea id="storySubtitle" class="story-subtitle-input" aria-label="Sottotitolo della geostoria" rows="2" placeholder="Una frase per introdurre il viaggio…" maxlength="400"></textarea>
               <div class="story-heading-meta"><span>✳ UN RACCONTO GEOGRAFICO</span><span id="storyUpdatedAt">Bozza</span></div>
+              <section id="storySoundtrackPanel" class="story-soundtrack-panel" aria-label="Colonna sonora della Geostoria" hidden>
+                <div class="story-soundtrack-head">
+                  <span class="story-soundtrack-icon" aria-hidden="true">♫</span>
+                  <div class="story-soundtrack-copy"><strong>Atmosfera sonora</strong><small id="soundtrackStatus">Nessuna traccia associata</small></div>
+                </div>
+                <div id="soundtrackListenerControls" class="story-soundtrack-listener" hidden>
+                  <button type="button" id="soundtrackPlayButton" aria-label="Riproduci o metti in pausa la musica">▶ Ascolta</button>
+                  <button type="button" id="soundtrackMuteButton" aria-label="Disattiva o riattiva il suono" aria-pressed="false">🔊 Mute</button>
+                </div>
+                <div id="soundtrackEditorControls" class="story-soundtrack-editor editor-only" hidden>
+                  <button type="button" id="soundtrackUploadButton">＋ Carica MP3</button>
+                  <button type="button" id="soundtrackRemoveButton" hidden>Rimuovi traccia</button>
+                  <small>Massimo 20 MB · il brano si ripete in loop. La riproduzione parte cliccando Ascolta.</small>
+                </div>
+                <audio id="storySoundtrackAudio" preload="none" loop></audio>
+              </section>
             </div>
             <div id="storyBlocks" class="story-blocks" aria-live="polite"></div>
             <button class="append-block-button editor-only" id="appendBlockButton" type="button"><span>＋</span> Aggiungi una nuova sezione</button>
@@ -115,6 +131,7 @@
 
     <div class="story-toast" id="storyToast" role="status" aria-live="polite"></div>
     <input id="coverFileInput" type="file" accept="image/*" hidden />
+    <input id="soundtrackFileInput" type="file" accept=".mp3,audio/mpeg" hidden />
     <input id="blockImageInput" type="file" accept="image/*" hidden />
     <input id="importFileInput" type="file" accept="application/json,.json" hidden />
     <dialog class="story-dialog block-choice-dialog" id="blockChoiceDialog" aria-labelledby="blockChoiceTitle">
