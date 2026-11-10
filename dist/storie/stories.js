@@ -598,7 +598,7 @@
     $('soundtrackListenerControls').hidden = !url;
     $('soundtrackEditorControls').hidden = !isEditor();
     $('soundtrackRemoveButton').hidden = !url;
-    $('soundtrackStatus').textContent = url ? 'Colonna sonora · MP3 in loop' : 'Nessuna traccia associata';
+    $('soundtrackStatus').textContent = url ? 'Colonna sonora' : 'Nessuna traccia associata';
     $('soundtrackPlayButton').textContent = audio.paused ? '▶ Ascolta' : 'Ⅱ Pausa';
     $('soundtrackMuteButton').textContent = audio.muted ? '🔇 Riattiva audio' : '🔊 Mute';
     $('soundtrackMuteButton').setAttribute('aria-pressed', String(audio.muted));
