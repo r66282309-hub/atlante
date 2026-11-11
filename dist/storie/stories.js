@@ -691,6 +691,10 @@
     $('previewButton').setAttribute('aria-pressed', String(preview));
     $('previewIcon').textContent = preview ? '✎' : '◉';
     $('previewLabel').textContent = preview ? 'Modifica' : 'Anteprima';
+    $('previewButton').title = preview ? 'Torna alla modalità Modifica' : 'Visualizza la Geostoria come un visitatore';
+    $('previewButton').classList.toggle('is-return-to-edit', preview && isEditor());
+    const editBanner = $('storyEditBanner');
+    if (editBanner) editBanner.hidden = !(preview && isEditor());
     renderHeading();
     renderSoundtrack();
     ['storyTitle', 'storySubtitle', 'storyKicker'].forEach(id => { $(id).readOnly = preview; });
@@ -1261,6 +1265,13 @@
       case 'compare':
       case 'timeline':
       case 'chapter': {
+        if (!ensureNarrativeWidgets()) {
+          const loading = document.createElement('p');
+          loading.className = 'narrative-loading';
+          loading.textContent = 'Caricamento degli strumenti narrativi…';
+          content.append(loading);
+          break;
+        }
         content.append(window.AtlasNarrative.render(block, preview, {
           imageUrl, renderMarkdown, appendMarkdownInline,
           save: queueSave, renderAll: renderBlocks, notice,
@@ -1322,12 +1333,57 @@
     state.maps = [];
   }
 
+
+  // A partially cached deploy must never make an entire Geostoria uneditable.
+  // Recover the separately bundled narrative widgets when they are absent.
+  let narrativeRecovery = false;
+  function ensureNarrativeWidgets() {
+    if (window.AtlasNarrative?.render) return true;
+    if (narrativeRecovery) return false;
+    narrativeRecovery = true;
+    const script = document.createElement('script');
+    script.src = './narrative-blocks.js?v=20261111-editor-recovery';
+    script.async = true;
+    script.onload = () => {
+      narrativeRecovery = false;
+      if (state.current && window.AtlasNarrative?.render) renderBlocks();
+    };
+    script.onerror = () => {
+      narrativeRecovery = false;
+      notice('L’editor narrativo non è disponibile. Ricarica la pagina con Ctrl+F5.');
+    };
+    document.head.append(script);
+    return false;
+  }
+  function failedBlock(block, error) {
+    const fallback = document.createElement('section');
+    fallback.id = 'block-' + block.id;
+    fallback.className = 'story-block story-block-error';
+    const title = document.createElement('strong');
+    title.textContent = 'Sezione temporaneamente non disponibile';
+    const message = document.createElement('p');
+    message.textContent = 'Il contenuto è conservato. Non verrà cancellato o sovrascritto.';
+    fallback.append(title, message);
+    if (isEditor()) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = '↻ Ricarica editor';
+      button.addEventListener('click', () => window.location.reload());
+      fallback.append(button);
+    }
+    console.error('Errore rendering blocco', block.type, block.id, error);
+    return fallback;
+  }
+
   function renderBlocks() {
     clearMiniMaps();
     const container = $('storyBlocks');
     container.replaceChildren();
     container.classList.add('story-blocks-layout');
-    state.current.blocks.forEach((block, index) => container.append(renderBlock(block, index)));
+    state.current.blocks.forEach((block, index) => {
+      try { container.append(renderBlock(block, index)); }
+      catch (error) { container.append(failedBlock(block, error)); }
+    });
     initializeBlockReveals(container);
     renderOutline();
     renderChapterNav();
@@ -1672,7 +1728,13 @@
     });
     $('cancelLinkedWaypoints').addEventListener('click', () => $('linkedWaypointsDialog').close());
     $('saveLinkedWaypoints').addEventListener('click', () => void saveLinkedWaypoints());
-    $('previewButton').addEventListener('click', async () => { await saveNow(); state.preview = !state.preview; renderStory(); $('storyStage').scrollTop = 0; });
+    $('previewButton').addEventListener('click', async () => { if (!(await saveNow())) return; state.preview = !state.preview; renderStory(); $('storyStage').scrollTop = 0; });
+    $('storyEditBannerButton')?.addEventListener('click', () => {
+      if (!isEditor() || !state.current) return;
+      state.preview = false;
+      renderStory();
+      $('storyStage').scrollTop = 0;
+    });
     $('blockPicker').addEventListener('click', event => {
       const button = event.target.closest('[data-add]');
       if (button) addBlock(button.dataset.add);

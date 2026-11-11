@@ -12,13 +12,13 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="../styles.css" />
     <link rel="stylesheet" href="../auth.css" />
-    <link rel="stylesheet" href="./stories.css?v=20261111-progress" />
+    <link rel="stylesheet" href="./stories.css?v=20261111-editor-recovery" />
     <script defer src="../config.js"></script>
     <script defer src="../auth.js?v=20261109-login2"></script>
     <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
     <script defer src="./rich-editor.js?v=20261111-formatfix"></script>
     <script defer src="./narrative-blocks.js?v=20261111-narrative2"></script>
-    <script defer src="./stories.js?v=20261111-narrative2"></script>
+    <script defer src="./stories.js?v=20261111-editor-recovery"></script>
   </head>
   <body class="story-body">
     <div class="story-app" id="storyApp">
@@ -102,6 +102,10 @@
                 </div>
                 <audio id="storySoundtrackAudio" preload="none" loop></audio>
               </section>
+            </div>
+            <div id="storyEditBanner" class="story-edit-banner" hidden>
+              <span>Stai visualizzando l'anteprima della tua Geostoria.</span>
+              <button type="button" id="storyEditBannerButton">✎ Torna alla modifica</button>
             </div>
             <nav class="story-chapter-nav" id="storyChapterNav" aria-label="Indice dei capitoli" hidden></nav>
             <div id="storyBlocks" class="story-blocks" aria-live="polite"></div>

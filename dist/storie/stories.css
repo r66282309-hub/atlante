@@ -342,3 +342,18 @@
 @media(prefers-reduced-motion:reduce){
  .story-reading-progress>span{transition:none}
 }
+
+/* Editor recovery and unmistakable preview-to-edit action. */
+.story-edit-banner{margin:0 70px 24px;display:flex;gap:14px;align-items:center;justify-content:space-between;
+  background:#f0f5ec;border:1px solid #d4e2cf;border-radius:9px;padding:12px 14px;color:#55745c;font-size:11px}
+.story-edit-banner[hidden]{display:none!important}
+.story-edit-banner button{border:1px solid #37614a;border-radius:7px;background:#37614a;color:#fff;
+  padding:9px 12px;font-size:11px;font-weight:800;cursor:pointer;white-space:nowrap}
+.story-edit-banner button:focus-visible{outline:3px solid #a4c2a7;outline-offset:2px}
+.preview-button.is-return-to-edit{background:#315c45;color:#fff;border-color:#315c45}
+.story-block-error{border:1px dashed #caa798;border-radius:9px;padding:20px;color:#755b4c;background:#fff9f4}
+.story-block-error strong{display:block;margin-bottom:7px}
+.story-block-error p{font-size:12px;line-height:1.5}
+.story-block-error button{border:1px solid #cba994;background:#fff;border-radius:6px;padding:8px 11px;color:#77543e;cursor:pointer}
+.narrative-loading{margin:12px 0;padding:20px 12px;color:#768976;background:#eff4ed;border-radius:9px;text-align:center;font-size:12px}
+@media(max-width:760px){.story-edit-banner{margin:0 18px 22px;flex-wrap:wrap}.story-edit-banner button{width:100%}}
