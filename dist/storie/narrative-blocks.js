@@ -658,6 +658,38 @@
         }else{
           const stage=opts.scrollStage||document.getElementById('storyStage');
           const desktop=stage&&getComputedStyle(stage).overflowY!=='visible';
+          const pane=root.querySelector('.narrative-timeline-map-pane');
+
+          // Center the pinned map in the VISIBLE reading area, not at the top
+          // of the entire story document. Recompute after resizing or if the
+          // caption wraps onto another line.
+          let stickyResizeFrame=0;
+          const centerStickyMap=()=>{
+            stickyResizeFrame=0;
+            if(!root.isConnected || !pane)return;
+            const viewportHeight=desktop?stage.clientHeight:window.innerHeight;
+            if(!Number.isFinite(viewportHeight)||viewportHeight<220)return;
+            const desiredMapHeight=Math.max(185,Math.min(320,viewportHeight-145));
+            const mapHeight=desiredMapHeight+'px';
+            if(element.style.height!==mapHeight){
+              element.style.height=mapHeight;
+              map.invalidateSize();
+            }
+            const paneHeight=pane.getBoundingClientRect().height;
+            const top=Math.max(12,Math.round((viewportHeight-paneHeight)/2));
+            pane.style.setProperty('--timeline-sticky-top',top+'px');
+          };
+          const scheduleStickyCenter=()=>{
+            if(!stickyResizeFrame)stickyResizeFrame=requestAnimationFrame(centerStickyMap);
+          };
+          let resizeObserver=null;
+          if(typeof window.ResizeObserver==='function'){
+            resizeObserver=new window.ResizeObserver(scheduleStickyCenter);
+            if(stage&&desktop)resizeObserver.observe(stage);
+            resizeObserver.observe(pane);
+          }
+          window.addEventListener('resize',scheduleStickyCenter,{passive:true});
+          scheduleStickyCenter();
           let frame=0;
           const refresh=()=>{
             frame=0;
@@ -683,9 +715,12 @@
           window.addEventListener('resize',schedule,{passive:true});
           opts.registerCleanup?.(()=>{
             if(frame)cancelAnimationFrame(frame);
+            if(stickyResizeFrame)cancelAnimationFrame(stickyResizeFrame);
+            resizeObserver?.disconnect();
             stage?.removeEventListener('scroll',schedule);
             window.removeEventListener('scroll',schedule);
             window.removeEventListener('resize',schedule);
+            window.removeEventListener('resize',scheduleStickyCenter);
           });
           if(events.length)activate(0);
           requestAnimationFrame(refresh);

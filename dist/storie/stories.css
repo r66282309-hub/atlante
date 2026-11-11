@@ -422,3 +422,54 @@
 @media(prefers-reduced-motion:reduce){
   .narrative-timeline-layout.has-map .narrative-timeline-event{transition:none}
 }
+
+
+/* Keep the narrative timeline map anchored at the vertical centre of the
+   VISIBLE story viewport while its steps scroll past.
+   overflow:hidden on .story-paper made it the map's nearest scroll container,
+   preventing position:sticky from following .story-stage. overflow:clip
+   preserves rounded-edge clipping without creating a scroll container. */
+.story-paper:has(.narrative-timeline-layout.has-map){
+  overflow:clip;
+}
+.story-block.is-preview .narrative-timeline-layout.has-map>.narrative-timeline-map-pane{
+  position:sticky;
+  top:var(--timeline-sticky-top, max(12px,calc(50% - 215px)));
+  align-self:start;
+  z-index:4;
+}
+@media (min-width:901px) and (max-width:1050px){
+  /* There is still room for two columns in the paper at these widths:
+     don't collapse into a single grid row which prevents sticky movement. */
+  .story-block.is-preview .narrative-timeline-layout.has-map{
+    display:grid;
+    grid-template-columns:minmax(0,1fr) minmax(215px,.9fr);
+    gap:14px;
+  }
+  .story-block.is-preview .narrative-timeline-layout.has-map>.narrative-timeline-map-pane{
+    position:sticky;
+    grid-row:auto;
+  }
+}
+@media (max-width:900px){
+  /* The map precedes the list but shares its full-height flex container,
+     so it can remain sticky throughout the whole timeline. */
+  .story-block.is-preview .narrative-timeline-layout.has-map{
+    display:flex;
+    flex-direction:column;
+    gap:14px;
+  }
+  .story-block.is-preview .narrative-timeline-layout.has-map>.narrative-timeline-map-pane{
+    order:-1;
+    position:sticky;
+    width:100%;
+    box-sizing:border-box;
+    top:var(--timeline-sticky-top,12px);
+    align-self:stretch;
+    z-index:4;
+  }
+  .story-block.is-preview .narrative-timeline-layout.has-map>.narrative-timeline{
+    width:100%;
+    box-sizing:border-box;
+  }
+}
