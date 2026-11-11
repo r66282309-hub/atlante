@@ -315,7 +315,7 @@
 .story-chapter-link{padding:8px 11px;background:#f5f8f1;border:1px solid #dde7d9;border-radius:18px;
   color:#58735e;font:700 10px "DM Sans",sans-serif;cursor:pointer;text-align:left}
 .story-chapter-link:hover{background:#e8f1e5;color:#2e583b}
-.story-reading-progress{position:sticky;top:0;z-index:50;height:3px;margin:0 0 -3px;pointer-events:none;overflow:hidden;background:transparent}
+.story-reading-progress{position:relative;flex:0 0 3px;height:3px;margin:0;z-index:1;pointer-events:none;overflow:hidden;background:#e6ebe3}
 .story-reading-progress>span{display:block;height:100%;width:0;background:linear-gradient(90deg,#618970,#bb8966);transition:width .15s linear}
 .picker-icon.gallery-icon{background:#ecf1e7;color:#648664}
 .picker-icon.quote-icon{background:#f6eee2;color:#ab8a63}
