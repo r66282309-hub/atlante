@@ -1264,6 +1264,7 @@
         content.append(window.AtlasNarrative.render(block, preview, {
           imageUrl, renderMarkdown, appendMarkdownInline,
           save: queueSave, renderAll: renderBlocks, notice,
+          isActive: id => Boolean(state.current?.blocks.some(item => item.id === id)),
           uploadImages: uploadNarrativeImages,
           makeRichText: item => window.AtlasRichEditor.mount({
             block: item, heading: false, renderMarkdown, appendMarkdownInline, queueSave

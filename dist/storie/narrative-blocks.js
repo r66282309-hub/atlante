@@ -164,16 +164,16 @@
     const root=$('figure','narrative-compare');
     const stage=$('div','narrative-compare-frame');
     const old=image(before,block.beforeLabel||'Prima',ctx);
-    old.className='narrative-compare-after';
+    old.className='narrative-compare-before';
     old.alt=block.beforeLabel||'Prima';
     const newer=image(after,block.afterLabel||'Dopo',ctx);
-    newer.className='narrative-compare-before';
+    newer.className='narrative-compare-after';
     newer.alt=block.afterLabel||'Dopo';
     const divider=$('div','narrative-compare-divider');
     const knob=$('span','', '↔');divider.append(knob);
     const labelBefore=$('span','narrative-compare-label label-before',block.beforeLabel || 'Prima');
     const labelAfter=$('span','narrative-compare-label label-after',block.afterLabel || 'Dopo');
-    stage.append(old,newer,divider,labelBefore,labelAfter);
+    stage.append(newer,old,divider,labelBefore,labelAfter);
     const range=$('input','narrative-compare-slider');
     range.type='range';range.min='0';range.max='100';range.value='50';
     range.setAttribute('aria-label','Scorri per confrontare le due fotografie');
@@ -272,6 +272,7 @@
             if(!input.files?.[0])return;
             try{
               const segments=await parseRouteFile(input.files[0]);
+              if(!ctx.isActive(block.id))return;
               block.segments=segments;ctx.save();refreshAll();
               ctx.notice('Percorso importato: '+routeStats(segments).distance.toFixed(1)+' km.');
             }catch(err){ctx.notice('Traccia non valida: '+err.message);}
@@ -295,6 +296,7 @@
         case 'timeline':
           edit.append(button('＋ Aggiungi una tappa',()=>{
             block.events=Array.isArray(block.events)?block.events:[];
+            if(block.events.length>=20)return ctx.notice('Massimo 20 tappe per linea del tempo.');
             block.events.push({date:'',title:'',text:''});ctx.save();refreshAll();
           }));
           (block.events||[]).forEach((event,i)=>{
