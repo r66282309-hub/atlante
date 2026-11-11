@@ -1275,6 +1275,9 @@
         content.append(window.AtlasNarrative.render(block, preview, {
           imageUrl, renderMarkdown, appendMarkdownInline,
           save: queueSave, renderAll: renderBlocks, notice,
+          isPreview: preview,
+          listRoutes: () => state.current.blocks.filter(item => item.type === 'route' && Array.isArray(item.segments) && item.segments.some(segment => segment?.length>1))
+            .map(item => ({ id:item.id, title:item.title || 'Percorso senza titolo' })),
           isActive: id => Boolean(state.current?.blocks.some(item => item.id === id)),
           uploadImages: uploadNarrativeImages,
           makeRichText: item => window.AtlasRichEditor.mount({
@@ -1328,7 +1331,9 @@
     renderBlocks();
   }
 
+  const timelineMapCleanups = [];
   function clearMiniMaps() {
+    timelineMapCleanups.splice(0).forEach(cleanup => { try { cleanup(); } catch (error) { console.warn('Timeline cleanup',error); } });
     state.maps.forEach(map => { try { map.remove(); } catch { /* map already detached */ } });
     state.maps = [];
   }
@@ -1342,7 +1347,7 @@
     if (narrativeRecovery) return false;
     narrativeRecovery = true;
     const script = document.createElement('script');
-    script.src = './narrative-blocks.js?v=20261111-editor-recovery';
+    script.src = './narrative-blocks.js?v=20261111-timeline-map';
     script.async = true;
     script.onload = () => {
       narrativeRecovery = false;
@@ -1390,6 +1395,18 @@
     requestAnimationFrame(() => {
       initializeMiniMaps();
       window.AtlasNarrative?.initializeRoutes(container, state.current.blocks, state.maps, config);
+      window.AtlasNarrative?.initializeTimelineMaps?.(container, state.current.blocks, state.maps, config, {
+        preview: state.preview,
+        scrollStage: $('storyStage'),
+        fallbackCenter: (() => {
+          const linked = state.waypoints.find(point => (state.current.linkedWaypointIds || []).includes(point.id));
+          return linked && Number.isFinite(Number(linked.lat)) && Number.isFinite(Number(linked.lon))
+            ? [Number(linked.lat),Number(linked.lon)] : [40.08,9.04];
+        })(),
+        isActive: id => Boolean(state.current?.blocks.some(item => item.id === id)),
+        notice, save: queueSave, renderAll: renderBlocks,
+        registerCleanup: cleanup => timelineMapCleanups.push(cleanup)
+      });
       updateReadingProgress();
     });
   }
@@ -1435,7 +1452,7 @@
       case 'insight': return { ...common, theme: 'curiosita', title: '', text: '' };
       case 'route': return { ...common, title: '', caption: '', segments: [] };
       case 'compare': return { ...common, before: '', after: '', beforeLabel: 'Prima', afterLabel: 'Dopo', caption: '' };
-      case 'timeline': return { ...common, events: [] };
+      case 'timeline': return { ...common, events: [], showMap: false, routeSource: 'none', routeBlockId: '', segments: [], basemap: 'osm' };
       case 'chapter': return { ...common, kicker: 'UN NUOVO CAPITOLO', title: 'Una nuova tappa', subtitle: '', src: '' };
       case 'map': return { ...common, lat: Number(state.waypoints[0]?.lat || 40.08), lon: Number(state.waypoints[0]?.lon || 9.04), zoom: 11, basemap: 'osm', caption: '' };
       default: return { ...common, text: '' };
@@ -1627,8 +1644,31 @@
         block.beforeLabel=asText(item.beforeLabel||'Prima',70);block.afterLabel=asText(item.afterLabel||'Dopo',70);
         block.caption=asText(item.caption,1000);
       }
-      if (item.type === 'timeline') block.events=(Array.isArray(item.events)?item.events:[]).slice(0,20)
-        .map(e=>({date:asText(e?.date,90),title:asText(e?.title,160),text:asText(e?.text,1500)}));
+      if (item.type === 'timeline') {
+        const coordinate = (raw,min,max) => {
+          if(raw === null || raw === undefined || raw === '')return null;
+          const number=Number(raw);
+          return Number.isFinite(number)&&number>=min&&number<=max?number:null;
+        };
+        block.events=(Array.isArray(item.events)?item.events:[]).slice(0,20)
+          .map(e=>({date:asText(e?.date,90),title:asText(e?.title,160),text:asText(e?.text,1500),
+            lat:coordinate(e?.lat,-90,90),lon:coordinate(e?.lon,-180,180)}));
+        block.showMap=Boolean(item.showMap);
+        block.basemap=item.basemap==='satellite'?'satellite':'osm';
+        block.routeSource=['linked','inline'].includes(item.routeSource)?item.routeSource:'none';
+        block.routeBlockId=isUUID(item.routeBlockId)?item.routeBlockId:'';
+        let budget=4500;
+        block.segments=(Array.isArray(item.segments)?item.segments:[]).slice(0,30).map(segment=>
+          (Array.isArray(segment)?segment:[]).slice(0,4500).map(point=>{
+            if(budget--<=0 || !Array.isArray(point))return null;
+            const lat=coordinate(point[0],-90,90),lon=coordinate(point[1],-180,180);
+            const elevation=point.length>2?coordinate(point[2],-12000,12000):null;
+            if(lat===null||lon===null)return null;
+            return elevation===null?[lat,lon]:[lat,lon,elevation];
+          }).filter(Boolean)).filter(segment=>segment.length>1);
+        if(block.routeSource==='linked'&&!block.routeBlockId)block.routeSource='none';
+        if(block.routeSource==='inline'&&!block.segments.length)block.routeSource='none';
+      }
       if (item.type === 'chapter') {
         block.kicker=asText(item.kicker,90);block.title=asText(item.title,180);
         block.subtitle=asText(item.subtitle,450);block.src=imageUrl(item.src);

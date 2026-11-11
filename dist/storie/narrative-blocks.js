@@ -186,26 +186,66 @@
     return root;
   }
 
+  // A narrative timeline can optionally sit alongside a live Leaflet map.
+  // Coordinates and the optional GPX geometry stay inside the same JSONB block.
+  function eventLocation(event) {
+    if (!event || event.lat == null || event.lon == null || event.lat === '' || event.lon === '') return null;
+    const lat = Number(event.lat), lon = Number(event.lon);
+    return Number.isFinite(lat) && Number.isFinite(lon) &&
+      Math.abs(lat) <= 90 && Math.abs(lon) <= 180 ? [lat, lon] : null;
+  }
+
+  function timelineTrack(block, blocks) {
+    const source = block.routeSource === 'linked'
+      ? blocks.find(item => item.id === block.routeBlockId && item.type === 'route')
+      : block.routeSource === 'inline' ? block : null;
+    return (Array.isArray(source?.segments) ? source.segments : [])
+      .filter(segment => Array.isArray(segment))
+      .map(segment => segment.map(validPoint).filter(Boolean).map(p => [p[0],p[1]]))
+      .filter(segment => segment.length > 1);
+  }
+
   function showTimeline(block,ctx) {
-    const root=$('div','narrative-timeline');
-    const events=Array.isArray(block.events)?block.events.slice(0,20):[];
-    if(!events.length)return $('div','narrative-empty','⌛  Aggiungi tappe alla tua linea del tempo');
-    for(const event of events) {
-      const row=$('div','narrative-timeline-event');
-      const head=$('div','narrative-timeline-head');
-      if(event.date)head.append($('time','narrative-timeline-date',event.date));
-      head.append($('h3','',event.title||'Una tappa'));
+    const root = $('div', 'narrative-timeline-layout' + (block.showMap ? ' has-map' : ''));
+    const list = $('div','narrative-timeline');
+    const events = Array.isArray(block.events) ? block.events.slice(0,20) : [];
+    if (!events.length) list.append($('div','narrative-empty','⌛  Aggiungi tappe alla tua linea del tempo'));
+    events.forEach((event,i) => {
+      const row = $('div','narrative-timeline-event');
+      row.dataset.timelineStep = String(i);
+      const head = $('div','narrative-timeline-head');
+      if (event.date) head.append($('time','narrative-timeline-date',event.date));
+      head.append($('h3','',event.title || 'Una tappa'));
       row.append(head);
-      if(event.text) {
-        const detail=$('div','narrative-timeline-detail');
+      if (event.text) {
+        const detail = $('div','narrative-timeline-detail');
         ctx.appendMarkdownInline(detail,event.text);
         row.append(detail);
       }
-      root.append(row);
+      if (block.showMap && eventLocation(event)) row.append($('span','narrative-timeline-has-point','⌖ Punto sulla mappa'));
+      list.append(row);
+    });
+    root.append(list);
+    if (block.showMap) {
+      const pane = $('aside','narrative-timeline-map-pane');
+      const header = $('div','narrative-timeline-map-header');
+      const label = $('span','', '⌖  IL PERCORSO SULLA MAPPA');
+      const current = $('strong','narrative-timeline-current','Le tappe della storia');
+      current.dataset.timelineCurrent = block.id;
+      header.append(label,current);
+      const map = $('div','narrative-timeline-map');
+      map.dataset.timelineMap = block.id;
+      map.setAttribute('role','application');
+      map.setAttribute('aria-label','Mappa delle tappe e del percorso della linea del tempo');
+      const hint = $('small','narrative-timeline-map-hint',
+        ctx.isPreview ? 'Scorri le tappe per seguire il percorso.'
+        : 'Seleziona una tappa e fai clic sulla mappa per assegnarle un punto. Se c’è una traccia, il punto viene agganciato al percorso.');
+      pane.append(header,map,hint);
+      root.append(pane);
     }
     return root;
   }
-  function showChapter(block,ctx) {
+    function showChapter(block,ctx) {
     const root=$('section','narrative-chapter');
     const url=ctx.imageUrl(block.src);
     if(url) {
@@ -293,26 +333,143 @@
           field('ETICHETTA DOPO','afterLabel');
           field('DIDASCALIA','caption',{multiline:true,rows:2});
           break;
-        case 'timeline':
+        case 'timeline': {
+          const panel = $('div','narrative-timeline-settings');
+          const showLabel = $('label','narrative-timeline-map-toggle');
+          const showInput = $('input');
+          showInput.type = 'checkbox';
+          showInput.checked = Boolean(block.showMap);
+          const title = $('span','', '⌖  Affianca la mini-mappa alla linea del tempo');
+          showLabel.append(showInput,title);
+          showInput.addEventListener('change',() => {
+            block.showMap = showInput.checked;
+            ctx.save();refreshAll();
+          });
+          panel.append(showLabel);
+          if(block.showMap) {
+            const routes = ctx.listRoutes().filter(route => route.id !== block.id);
+            const options = [['none','Solo tappe sulla mappa (senza traccia)']];
+            if(Array.isArray(block.segments) && block.segments.length)
+              options.push(['inline','Traccia GPX / GeoJSON caricata nella timeline']);
+            routes.forEach(route => options.push(['linked:'+route.id,'Collega percorso: '+route.title]));
+            const current = block.routeSource==='linked' && routes.some(r=>r.id===block.routeBlockId)
+              ? 'linked:'+block.routeBlockId
+              : block.routeSource==='inline' && (block.segments||[]).length ? 'inline' : 'none';
+            const routeControl = textField('TRACCIA DA VISUALIZZARE',current,value=>{
+              if(value.startsWith('linked:')) {
+                block.routeSource='linked';block.routeBlockId=value.slice(7);
+              }else if(value==='inline'){block.routeSource='inline';block.routeBlockId='';}
+              else {block.routeSource='none';block.routeBlockId='';}
+              ctx.save();refreshAll();
+            },{select:options});
+            panel.append(routeControl);
+            const upload = $('div','narrative-upload');
+            const fileInput = $('input');
+            fileInput.type='file';
+            fileInput.accept='.gpx,.geojson,.json,application/geo+json,application/gpx+xml';
+            fileInput.hidden=true;
+            fileInput.addEventListener('change',async()=>{
+              const file=fileInput.files?.[0];
+              if(!file)return;
+              try {
+                const segments=await parseRouteFile(file);
+                if(!ctx.isActive(block.id))return;
+                block.segments=segments;
+                block.routeSource='inline';
+                block.routeBlockId='';
+                ctx.save();refreshAll();
+                ctx.notice('Traccia caricata: '+routeStats(segments).distance.toFixed(1).replace('.',',')+' km. Ora assegna le tappe con un clic sulla mappa.');
+              }catch(error) {ctx.notice('Impossibile caricare la traccia: '+error.message);}
+              finally {fileInput.value='';}
+            });
+            upload.append(button('⌁ Importa GPX / GeoJSON',()=>fileInput.click()),fileInput);
+            if(Array.isArray(block.segments) && block.segments.length) {
+              upload.append(button('Rimuovi traccia caricata',()=>{
+                block.segments=[];if(block.routeSource==='inline')block.routeSource='none';
+                ctx.save();refreshAll();
+              },'narrative-danger'));
+            }
+            panel.append(upload);
+            panel.append(textField('SFONDO CARTOGRAFICO',block.basemap||'osm',value=>{
+              block.basemap=value==='satellite'?'satellite':'osm';ctx.save();refreshAll();
+            },{select:[['osm','OpenStreetMap'],['satellite','Satellite']]}));
+            panel.append($('p','narrative-timeline-setting-hint',
+              'Seleziona una tappa con “Posiziona sulla mappa”, poi clicca sul punto. Quando una traccia è presente, la posizione viene agganciata alla linea.'));
+          }
+          edit.append(panel);
           edit.append(button('＋ Aggiungi una tappa',()=>{
             block.events=Array.isArray(block.events)?block.events:[];
             if(block.events.length>=20)return ctx.notice('Massimo 20 tappe per linea del tempo.');
-            block.events.push({date:'',title:'',text:''});ctx.save();refreshAll();
+            block.events.push({date:'',title:'',text:'',lat:null,lon:null});
+            ctx.save();refreshAll();
           }));
           (block.events||[]).forEach((event,i)=>{
             const card=$('div','narrative-event-edit');
             const top=$('div','narrative-event-controls');
             top.append($('strong','', 'Tappa '+(i+1)));
-            top.append(button('↑',()=>{if(i){[block.events[i],block.events[i-1]]=[block.events[i-1],block.events[i]];ctx.save();refreshAll();}},'narrative-mini-button'));
-            top.append(button('↓',()=>{if(i<block.events.length-1){[block.events[i],block.events[i+1]]=[block.events[i+1],block.events[i]];ctx.save();refreshAll();}},'narrative-mini-button'));
+            top.append(button('↑',()=>{
+              if(i){[block.events[i],block.events[i-1]]=[block.events[i-1],block.events[i]];
+                ctx.save();refreshAll();}
+            },'narrative-mini-button'));
+            top.append(button('↓',()=>{
+              if(i<block.events.length-1){[block.events[i],block.events[i+1]]=[block.events[i+1],block.events[i]];
+                ctx.save();refreshAll();}
+            },'narrative-mini-button'));
             top.append(button('×',()=>{block.events.splice(i,1);ctx.save();refreshAll();},'narrative-mini-button'));
             card.append(top);
-            for(const [label,key,opts] of [['DATA / EPOCA','date',{}],['TITOLO','title',{}],['BREVE RACCONTO','text',{multiline:true,rows:2}]]) {
-              card.append(textField(label,event[key],v=>{event[key]=v;ctx.save();refresh();},opts));
+            for(const [label,key,opts] of [
+              ['DATA / EPOCA','date',{}],['TITOLO','title',{}],['BREVE RACCONTO','text',{multiline:true,rows:2}]
+            ]) {
+              card.append(textField(label,event[key],v=>{
+                event[key]=v;ctx.save();
+                if(!block.showMap)refresh();
+                else {
+                  const row=stage.querySelector('[data-timeline-step="'+i+'"]');
+                  if(!row)return;
+                  if(key==='title'){
+                    const heading=row.querySelector('h3');if(heading)heading.textContent=v||'Una tappa';
+                  }else if(key==='date'){
+                    let time=row.querySelector('time');
+                    if(!time && v) {
+                      time=$('time','narrative-timeline-date');
+                      row.querySelector('.narrative-timeline-head')?.prepend(time);
+                    }
+                    if(time) {time.textContent=v;time.hidden=!v;}
+                  }else {
+                    let detail=row.querySelector('.narrative-timeline-detail');
+                    if(!detail && v) {detail=$('div','narrative-timeline-detail');row.append(detail);}
+                    if(detail){detail.replaceChildren();ctx.appendMarkdownInline(detail,v);detail.hidden=!v;}
+                  }
+                }
+              },opts));
+            }
+            if(block.showMap) {
+              const coords=$('div','narrative-timeline-pin-editor');
+              const where=eventLocation(event);
+              const status=$('span','narrative-timeline-coords',
+                where ? '⌖ '+where[0].toFixed(6)+', '+where[1].toFixed(6) : 'Nessun punto assegnato');
+              const place = button('⌖ Posiziona sulla mappa',()=>{
+                const el = stage.querySelector('[data-timeline-map]');
+                if(!el)return ctx.notice('Mini-mappa non disponibile.');
+                el.dataset.assignStep=String(i);
+                edit.querySelectorAll('[data-position-step]').forEach(b=>{
+                  b.setAttribute('aria-pressed',String(b.dataset.positionStep===String(i)));
+                });
+                ctx.notice('Tappa '+(i+1)+' selezionata: fai clic sulla mini-mappa.');
+                el.scrollIntoView({behavior:'smooth',block:'center'});
+              },'narrative-timeline-assign');
+              place.dataset.positionStep=String(i);
+              place.setAttribute('aria-pressed','false');
+              coords.append(status,place);
+              if(where)coords.append(button('× Rimuovi punto',()=>{
+                event.lat=null;event.lon=null;ctx.save();refreshAll();
+              },'narrative-mini-button'));
+              card.append(coords);
             }
             edit.append(card);
           });
           break;
+        }
         case 'chapter':
           field('SOPRATITOLO','kicker',{placeholder:'CAPITOLO 01'});
           field('TITOLO','title',{placeholder:'Dentro la valle'});
@@ -397,5 +554,151 @@
     });
   }
 
-  window.AtlasNarrative={render,initializeRoutes,parseRouteFile};
+
+  function initializeTimelineMaps(container,blocks,maps,config,opts={}) {
+    if(!window.L)return;
+    const timelines = new Map(blocks.filter(b=>b.type==='timeline').map(b=>[String(b.id),b]));
+    container.querySelectorAll('[data-timeline-map]').forEach(element=>{
+      const block=timelines.get(element.dataset.timelineMap);
+      if(!block?.showMap)return;
+      let map;
+      try {
+        const mapSegments=timelineTrack(block,blocks);
+        const events=Array.isArray(block.events)?block.events.slice(0,20):[];
+        const rows=[...element.closest('.narrative-timeline-layout').querySelectorAll('[data-timeline-step]')];
+        const root=element.closest('.narrative-timeline-layout');
+        const label=root.querySelector('[data-timeline-current]');
+        map=L.map(element,{zoomControl:true,scrollWheelZoom:false,attributionControl:true,minZoom:3,maxZoom:19});
+        const satellite=block.basemap==='satellite'&&Boolean(config?.satellite?.url);
+        L.tileLayer(satellite?config.satellite.url:'https://tile.openstreetmap.org/{z}/{x}/{y}.png',{
+          attribution:satellite?(config.satellite.attribution||'&copy; Google'):'&copy; OpenStreetMap contributors',
+          maxZoom:19
+        }).addTo(map);
+        if(mapSegments.length) {
+          L.polyline(mapSegments,{color:'#fffdf6',weight:8,opacity:.96,interactive:false}).addTo(map);
+          L.polyline(mapSegments,{color:'#b97957',weight:4,opacity:1,interactive:false}).addTo(map);
+        }
+        const markers=new Map();
+        const positions=[];
+        events.forEach((event,i)=>{
+          const latlng=eventLocation(event);
+          if(!latlng)return;
+          positions.push(latlng);
+          const marker=L.circleMarker(latlng,{
+            radius:6,weight:2,color:'#fffefa',fillColor:'#537660',fillOpacity:1
+          }).addTo(map);
+          marker.bindTooltip('Tappa '+(i+1),{direction:'top'});
+          marker.on('click',()=>{
+            if(opts.preview)rows[i]?.scrollIntoView({behavior:'smooth',block:'center'});
+          });
+          markers.set(i,marker);
+        });
+        const fitPoints=mapSegments.flat();
+        const allPoints=fitPoints.length?fitPoints:positions;
+        if(allPoints.length>1) {
+          map.fitBounds(L.latLngBounds(allPoints),{padding:[26,26],maxZoom:15});
+        }else if(allPoints.length===1) {
+          map.setView(allPoints[0],13);
+        }else map.setView(opts.fallbackCenter||[40.08,9.04],11);
+
+        let active=-1;
+        function activate(index) {
+          if(index===active||index<0||index>=events.length)return;
+          active=index;
+          rows.forEach((row,i)=>row.classList.toggle('is-active',i===index));
+          markers.forEach((marker,i)=>marker.setStyle({
+            radius:i===index?11:6,
+            weight:i===index?3:2,
+            color:i===index?'#fff': '#fffefa',
+            fillColor:i===index?'#d4824f':'#537660',
+            fillOpacity:1
+          }));
+          if(label)label.textContent='Tappa '+String(index+1).padStart(2,'0')+' · '+(events[index].title||'Una tappa');
+          const point=eventLocation(events[index]);
+          if(point && !map.getBounds().pad(-.14).contains(point)){
+            map.panTo(point,{animate:true,duration:.4});
+          }
+        }
+        const snapToRoute=latlng=>{
+          if(!mapSegments.length)return latlng;
+          const zoom=map.getZoom(),target=map.project(latlng,zoom);
+          let nearest=null,best=Infinity;
+          for(const line of mapSegments) {
+            for(let j=1;j<line.length;j++) {
+              const a=map.project(line[j-1],zoom),b=map.project(line[j],zoom);
+              const dx=b.x-a.x,dy=b.y-a.y;
+              const t=dx*dx+dy*dy>0
+                ?Math.max(0,Math.min(1,((target.x-a.x)*dx+(target.y-a.y)*dy)/(dx*dx+dy*dy))) : 0;
+              const x=a.x+t*dx,y=a.y+t*dy;
+              const distance=(x-target.x)**2+(y-target.y)**2;
+              if(distance<best){best=distance;nearest=map.unproject(L.point(x,y),zoom);}
+            }
+          }
+          return nearest||latlng;
+        };
+
+        if(!opts.preview){
+          map.on('click',event=>{
+            const index=Number(element.dataset.assignStep);
+            if(!Number.isInteger(index)||index<0||index>=events.length){
+              opts.notice?.('Seleziona prima “Posiziona sulla mappa” nella tappa desiderata.');
+              return;
+            }
+            if(!opts.isActive?.(block.id))return;
+            const p=snapToRoute(event.latlng);
+            const lat=Number(p.lat.toFixed(6)),lon=Number(p.lng.toFixed(6));
+            events[index].lat=lat;
+            events[index].lon=lon;
+            opts.save?.();
+            opts.renderAll?.();
+            opts.notice?.('Posizione salvata per la tappa '+(index+1)+(mapSegments.length?' (agganciata alla traccia).':'.'));
+          });
+          const assigned=Number(element.dataset.assignStep);
+          if(Number.isInteger(assigned)&&assigned>=0&&assigned<events.length)activate(assigned);
+        }else{
+          const stage=opts.scrollStage||document.getElementById('storyStage');
+          const desktop=stage&&getComputedStyle(stage).overflowY!=='visible';
+          let frame=0;
+          const refresh=()=>{
+            frame=0;
+            if(!root.isConnected||!rows.length)return;
+            const bounds=desktop?stage.getBoundingClientRect():{top:0,bottom:window.innerHeight,height:window.innerHeight};
+            const timeline=root.getBoundingClientRect();
+            if(timeline.bottom<bounds.top||timeline.top>bounds.bottom)return;
+            const cursor=bounds.top+(bounds.height||bounds.bottom-bounds.top)*.42;
+            let nearest=0,best=Infinity;
+            rows.forEach((row,i)=>{
+              const rect=row.getBoundingClientRect();
+              const center=rect.top+Math.min(rect.height*.28,85);
+              const delta=Math.abs(center-cursor);
+              if(delta<best){best=delta;nearest=i;}
+            });
+            activate(nearest);
+          };
+          const schedule=()=>{
+            if(!frame)frame=requestAnimationFrame(refresh);
+          };
+          stage?.addEventListener('scroll',schedule,{passive:true});
+          window.addEventListener('scroll',schedule,{passive:true});
+          window.addEventListener('resize',schedule,{passive:true});
+          opts.registerCleanup?.(()=>{
+            if(frame)cancelAnimationFrame(frame);
+            stage?.removeEventListener('scroll',schedule);
+            window.removeEventListener('scroll',schedule);
+            window.removeEventListener('resize',schedule);
+          });
+          if(events.length)activate(0);
+          requestAnimationFrame(refresh);
+        }
+        maps.push(map);
+        requestAnimationFrame(()=>map.invalidateSize());
+      }catch(error){
+        console.error('Mini-mappa linea del tempo:',error);
+        if(map)try{map.remove();}catch{/* removed */}
+        element.replaceWith($('div','narrative-empty','La mini-mappa non è disponibile su questo dispositivo.'));
+      }
+    });
+  }
+
+  window.AtlasNarrative={render,initializeRoutes,initializeTimelineMaps,parseRouteFile};
 })();
