@@ -12,12 +12,13 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="../styles.css" />
     <link rel="stylesheet" href="../auth.css" />
-    <link rel="stylesheet" href="./stories.css?v=20261110-audio" />
+    <link rel="stylesheet" href="./stories.css?v=20261111-narrative" />
     <script defer src="../config.js"></script>
     <script defer src="../auth.js?v=20261109-login2"></script>
     <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
     <script defer src="./rich-editor.js?v=20261110-live"></script>
-    <script defer src="./stories.js?v=20261110-audio-label"></script>
+    <script defer src="./narrative-blocks.js?v=20261111-narrative"></script>
+    <script defer src="./stories.js?v=20261111-narrative"></script>
   </head>
   <body class="story-body">
     <div class="story-app" id="storyApp">
@@ -67,6 +68,7 @@
         </header>
 
         <div class="story-stage" id="storyStage">
+          <div class="story-reading-progress" id="storyReadingProgress" aria-hidden="true" hidden><span id="storyReadingProgressFill"></span></div>
           <article class="story-paper" id="storyDocument" aria-label="Contenuto della geostoria">
             <div class="story-cover" id="storyCover">
               <div class="cover-gradient"></div>
@@ -101,6 +103,7 @@
                 <audio id="storySoundtrackAudio" preload="none" loop></audio>
               </section>
             </div>
+            <nav class="story-chapter-nav" id="storyChapterNav" aria-label="Indice dei capitoli" hidden></nav>
             <div id="storyBlocks" class="story-blocks" aria-live="polite"></div>
             <button class="append-block-button editor-only" id="appendBlockButton" type="button"><span>＋</span> Aggiungi una nuova sezione</button>
             <div class="story-finale"><span>✳</span><p>Ogni luogo ha una storia.</p><small>ATLANTE · GEOSTORIE</small></div>
@@ -120,11 +123,18 @@
             <button type="button" data-add="video"><span class="picker-icon video-icon">▶</span><span><strong>Video</strong><small>YouTube o MP4 ImageKit</small></span><span class="picker-plus">＋</span></button>
             <button type="button" data-add="separator"><span class="picker-icon separator-icon">✳</span><span><strong>Separatore</strong><small>Linea, ornamento o puntini</small></span><span class="picker-plus">＋</span></button>
             <button type="button" data-add="map"><span class="picker-icon map-icon">◇</span><span><strong>Mini-mappa</strong><small>Cartografia Leaflet</small></span><span class="picker-plus">＋</span></button>
+            <button type="button" data-add="gallery"><span class="picker-icon gallery-icon">▤</span><span><strong>Galleria</strong><small>Più fotografie, un solo racconto</small></span><span class="picker-plus">＋</span></button>
+            <button type="button" data-add="quote"><span class="picker-icon quote-icon">❝</span><span><strong>Citazione</strong><small>Frasi e riflessioni in evidenza</small></span><span class="picker-plus">＋</span></button>
+            <button type="button" data-add="insight"><span class="picker-icon insight-icon">◈</span><span><strong>Approfondimento</strong><small>Geologia, storia e curiosità</small></span><span class="picker-plus">＋</span></button>
+            <button type="button" data-add="route"><span class="picker-icon route-icon">⌁</span><span><strong>Percorso</strong><small>Traccia GPX o GeoJSON</small></span><span class="picker-plus">＋</span></button>
+            <button type="button" data-add="compare"><span class="picker-icon compare-icon">◫</span><span><strong>Prima / dopo</strong><small>Due immagini da confrontare</small></span><span class="picker-plus">＋</span></button>
+            <button type="button" data-add="timeline"><span class="picker-icon timeline-icon">◷</span><span><strong>Linea del tempo</strong><small>Tappe e avvenimenti</small></span><span class="picker-plus">＋</span></button>
+            <button type="button" data-add="chapter"><span class="picker-icon chapter-icon">▣</span><span><strong>Capitolo immersivo</strong><small>Un ingresso scenografico</small></span><span class="picker-plus">＋</span></button>
           </div>
           <div class="tool-divider"></div>
           <div class="outline-heading"><span class="tools-section-name">STRUTTURA DEL RACCONTO</span><span id="blockCount">0 blocchi</span></div>
           <div class="story-outline" id="storyOutline"></div>
-          <div class="tool-hint"><span>✳</span><strong>Un racconto, tanti modi di esplorare.</strong><p>Puoi spostare i blocchi, inserire waypoint già presenti sulla mappa e creare mini-mappe indipendenti con coordinate personalizzate.</p></div>
+          <div class="tool-hint"><span>✳</span><strong>Un racconto, tanti modi di esplorare.</strong><p>Componi capitoli, gallerie e citazioni. Importa percorsi GPX o GeoJSON, confronta immagini e aggiungi dettagli geologici, storici o personali.</p></div>
         </div>
       </aside>
     </div>
@@ -146,6 +156,13 @@
         <button type="button" data-add="video"><span>▶</span>Video</button>
         <button type="button" data-add="separator"><span>✳</span>Separatore</button>
         <button type="button" data-add="map"><span>◇</span>Mini-mappa</button>
+        <button type="button" data-add="gallery"><span>▤</span>Galleria</button>
+        <button type="button" data-add="quote"><span>❝</span>Citazione</button>
+        <button type="button" data-add="insight"><span>◈</span>Approfondimento</button>
+        <button type="button" data-add="route"><span>⌁</span>Percorso</button>
+        <button type="button" data-add="compare"><span>◫</span>Prima / dopo</button>
+        <button type="button" data-add="timeline"><span>◷</span>Linea del tempo</button>
+        <button type="button" data-add="chapter"><span>▣</span>Capitolo immersivo</button>
       </div>
     </dialog>
     <dialog class="story-dialog story-links-dialog" id="linkedWaypointsDialog" aria-labelledby="linkedWaypointsTitle">

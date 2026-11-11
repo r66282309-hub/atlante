@@ -3,9 +3,9 @@
 
   const $ = id => document.getElementById(id);
   const config = window.ATLAS_CONFIG;
-  const TYPES = ['heading', 'paragraph', 'waypoint', 'image', 'video', 'separator', 'map'];
-  const TYPE_NAMES = { heading: 'Titolo', paragraph: 'Testo', waypoint: 'Waypoint', image: 'Fotografia', video: 'Video', separator: 'Separatore', map: 'Mini-mappa' };
-  const TYPE_ICONS = { heading: 'T', paragraph: '≡', waypoint: '⌖', image: '▧', video: '▶', separator: '✳', map: '◇' };
+  const TYPES = ['heading', 'paragraph', 'waypoint', 'image', 'video', 'separator', 'map', 'gallery', 'quote', 'insight', 'route', 'compare', 'timeline', 'chapter'];
+  const TYPE_NAMES = { heading: 'Titolo', paragraph: 'Testo', waypoint: 'Waypoint', image: 'Fotografia', video: 'Video', separator: 'Separatore', map: 'Mini-mappa', gallery: 'Galleria', quote: 'Citazione', insight: 'Approfondimento', route: 'Percorso', compare: 'Prima / dopo', timeline: 'Linea del tempo', chapter: 'Capitolo immersivo' };
+  const TYPE_ICONS = { heading: 'T', paragraph: '≡', waypoint: '⌖', image: '▧', video: '▶', separator: '✳', map: '◇', gallery: '▤', quote: '❝', insight: '◈', route: '⌁', compare: '◫', timeline: '◷', chapter: '▣' };
   const state = { stories: [], current: null, waypoints: [], localStories: [], preview: false, maps: [], saveTimer: null, savingPromise: null, dirty: false, revision: 0, pendingImageId: null, storageError: false };
   let editorInitialized = false;
   let authChecked = false;
@@ -815,9 +815,64 @@
       case 'image': return block.caption || 'Fotografia';
       case 'video': return block.caption || 'Video';
       case 'separator': return 'Separatore · ' + ({ line: 'Linea', ornament: 'Ornamento', dots: 'Puntini' }[block.style] || 'Ornamento');
+      case 'gallery': return 'Galleria · ' + (block.photos?.length || 0) + ' foto';
+      case 'quote': return (block.text || '').slice(0,35) || 'Citazione';
+      case 'insight': return block.title || 'Approfondimento';
+      case 'route': return block.title || 'Percorso';
+      case 'compare': return block.caption || 'Prima / dopo';
+      case 'timeline': return 'Linea del tempo · ' + (block.events?.length || 0) + ' tappe';
+      case 'chapter': return block.title || 'Capitolo';
       case 'map': return block.caption || 'Mini-mappa';
       default: return 'Blocco';
     }
+  }
+
+
+  // Chapter navigation appears automatically in long published stories.
+  function renderChapterNav() {
+    const nav=$('storyChapterNav');
+    if(!nav)return;
+    const chapters=state.current.blocks.filter(block =>
+      ['heading','chapter'].includes(block.type) && (block.title||block.text||'').trim()
+    );
+    nav.hidden=!state.preview||chapters.length<2;
+    nav.replaceChildren();
+    if(nav.hidden)return;
+    const label=document.createElement('strong');
+    label.className='story-chapter-nav-title';
+    label.textContent='Nel racconto';
+    nav.append(label);
+    const links=document.createElement('div');
+    links.className='story-chapter-links';
+    chapters.forEach((block,index)=>{
+      const link=document.createElement('button');
+      link.type='button';
+      link.className='story-chapter-link';
+      link.textContent=String(index+1).padStart(2,'0')+'  '+(block.title||block.text||'').replace(/<[^>]*>|[*_#]/g,'').slice(0,55);
+      link.addEventListener('click',()=>document.getElementById('block-'+block.id)?.scrollIntoView({behavior:'smooth',block:'start'}));
+      links.append(link);
+    });
+    nav.append(links);
+  }
+  function updateReadingProgress() {
+    const bar=$('storyReadingProgress'),fill=$('storyReadingProgressFill');
+    if(!bar||!fill)return;
+    bar.hidden=!state.preview||$('storyDocument').hidden;
+    if(bar.hidden)return;
+    const stage=$('storyStage'),height=stage.scrollHeight-stage.clientHeight;
+    let ratio;
+    if(height>10&&getComputedStyle(stage).overflowY!=='visible'){
+      ratio=stage.scrollTop/height;
+    }else{
+      const rect=$('storyDocument').getBoundingClientRect();
+      ratio=(window.innerHeight*.2-rect.top)/Math.max(1,rect.height-window.innerHeight*.8);
+    }
+    fill.style.width=Math.round(Math.max(0,Math.min(1,ratio))*100)+'%';
+  }
+  function bindReadingProgress() {
+    $('storyStage').addEventListener('scroll',updateReadingProgress,{passive:true});
+    window.addEventListener('scroll',updateReadingProgress,{passive:true});
+    window.addEventListener('resize',updateReadingProgress,{passive:true});
   }
 
   function renderOutline() {
@@ -1199,6 +1254,23 @@
         content.append(separatorDisplay(block.style));
         break;
       }
+      case 'gallery':
+      case 'quote':
+      case 'insight':
+      case 'route':
+      case 'compare':
+      case 'timeline':
+      case 'chapter': {
+        content.append(window.AtlasNarrative.render(block, preview, {
+          imageUrl, renderMarkdown, appendMarkdownInline,
+          save: queueSave, renderAll: renderBlocks, notice,
+          uploadImages: uploadNarrativeImages,
+          makeRichText: item => window.AtlasRichEditor.mount({
+            block: item, heading: false, renderMarkdown, appendMarkdownInline, queueSave
+          })
+        }));
+        break;
+      }
       case 'map': {
         if (!preview) {
           const options = [{ value: '', label: 'Coordinate manuali' }, ...state.waypoints.map(point => ({ value: String(point.id), label: point.title }))];
@@ -1257,7 +1329,12 @@
     state.current.blocks.forEach((block, index) => container.append(renderBlock(block, index)));
     initializeBlockReveals(container);
     renderOutline();
-    requestAnimationFrame(initializeMiniMaps);
+    renderChapterNav();
+    requestAnimationFrame(() => {
+      initializeMiniMaps();
+      window.AtlasNarrative?.initializeRoutes(container, state.current.blocks, state.maps, config);
+      updateReadingProgress();
+    });
   }
 
   function initializeMiniMaps() {
@@ -1296,6 +1373,13 @@
       case 'image': return { ...common, src: '', caption: '' };
       case 'video': return { ...common, url: '', caption: '' };
       case 'separator': return { ...common, style: 'ornament' };
+      case 'gallery': return { ...common, photos: [] };
+      case 'quote': return { ...common, text: '', credit: '' };
+      case 'insight': return { ...common, theme: 'curiosita', title: '', text: '' };
+      case 'route': return { ...common, title: '', caption: '', segments: [] };
+      case 'compare': return { ...common, before: '', after: '', beforeLabel: 'Prima', afterLabel: 'Dopo', caption: '' };
+      case 'timeline': return { ...common, events: [] };
+      case 'chapter': return { ...common, kicker: 'UN NUOVO CAPITOLO', title: 'Una nuova tappa', subtitle: '', src: '' };
       case 'map': return { ...common, lat: Number(state.waypoints[0]?.lat || 40.08), lon: Number(state.waypoints[0]?.lon || 9.04), zoom: 11, basemap: 'osm', caption: '' };
       default: return { ...common, text: '' };
     }
@@ -1372,6 +1456,41 @@
     return client().storage.from(config.supabase.photoBucket).getPublicUrl(path).data.publicUrl;
   }
 
+
+  async function uploadNarrativeImages(files,blockId,target) {
+    if(!isEditor()||!state.current)return;
+    const storyId=state.current.id;
+    const block=state.current.blocks.find(b=>b.id===blockId);
+    if(!block)return;
+    const batch=Array.from(files||[]).slice(0,12);
+    let uploaded=0;
+    try {
+      for(const file of batch) {
+        if(!file?.type?.startsWith('image/'))throw new Error('Seleziona soltanto fotografie.');
+        if(state.current?.id!==storyId)return;
+        if(target==='gallery'&&(block.photos?.length||0)>=12)break;
+        setSaveStatus('Caricamento fotografia '+(uploaded+1)+'/'+batch.length+'…',true);
+        const jpeg=await imageToDataUrl(file);
+        const src=await uploadImageData(jpeg,storyId);
+        if(state.current?.id!==storyId)return;
+        if(target==='gallery'){
+          block.photos=Array.isArray(block.photos)?block.photos:[];
+          block.photos.push({src,caption:''});
+        }else if(target==='before'||target==='after')block[target]=src;
+        else if(target==='chapter')block.src=src;
+        uploaded++;queueSave();
+      }
+      if(state.current?.id===storyId){
+        renderBlocks();
+        if(uploaded){if(await saveNow())notice(uploaded+' fotografie caricate.');}
+        else notice('Nessuna fotografia aggiunta (massimo 12 nella galleria).');
+      }
+    }catch(error){
+      console.error('Fotografia narrativa:',error);
+      if(state.current?.id===storyId){renderBlocks();notice(error.message||'Caricamento non riuscito.');}
+    }
+  }
+
   async function uploadLocalImage(file, blockId = null) {
     if (!file) return;
     const activeStoryId = state.current?.id;
@@ -1427,6 +1546,36 @@
       if (item.type === 'image') { block.src = imageUrl(item.src); block.caption = asText(item.caption, 1000); }
       if (item.type === 'video') { block.url = (youtubeId(item.url) || imageKitVideoUrl(item.url)) ? asText(item.url, 500) : ''; block.caption = asText(item.caption, 1000); }
       if (item.type === 'separator') block.style = ['line', 'ornament', 'dots'].includes(item.style) ? item.style : 'ornament';
+
+      if (item.type === 'gallery') block.photos = (Array.isArray(item.photos) ? item.photos : []).slice(0,12)
+        .map(p => ({src:imageUrl(p?.src),caption:asText(p?.caption,500)})).filter(p=>p.src);
+      if (item.type === 'quote') {block.text=asText(item.text,5000);block.credit=asText(item.credit,250);}
+      if (item.type === 'insight') {
+        block.theme=['geologia','storia','natura','curiosita','nota'].includes(item.theme)?item.theme:'curiosita';
+        block.title=asText(item.title,150);block.text=asText(item.text,10000);
+      }
+      if (item.type === 'route') {
+        block.title=asText(item.title,150);block.caption=asText(item.caption,1000);
+        let pointCount=0;
+        block.segments=(Array.isArray(item.segments)?item.segments:[]).slice(0,30).map(segment=>
+          (Array.isArray(segment)?segment:[]).slice(0,4500).map(point=>{
+            const lat=Number(point?.[0]),lon=Number(point?.[1]);
+            const elevation=point?.[2] === undefined || point?.[2] === null ? null : Number(point[2]);
+            if(Math.abs(lat)>90||Math.abs(lon)>180||!Number.isFinite(lat)||!Number.isFinite(lon)||++pointCount>4500)return null;
+            return Number.isFinite(elevation)?[lat,lon,elevation]:[lat,lon];
+          }).filter(Boolean)).filter(segment=>segment.length>1);
+      }
+      if (item.type === 'compare') {
+        block.before=imageUrl(item.before);block.after=imageUrl(item.after);
+        block.beforeLabel=asText(item.beforeLabel||'Prima',70);block.afterLabel=asText(item.afterLabel||'Dopo',70);
+        block.caption=asText(item.caption,1000);
+      }
+      if (item.type === 'timeline') block.events=(Array.isArray(item.events)?item.events:[]).slice(0,20)
+        .map(e=>({date:asText(e?.date,90),title:asText(e?.title,160),text:asText(e?.text,1500)}));
+      if (item.type === 'chapter') {
+        block.kicker=asText(item.kicker,90);block.title=asText(item.title,180);
+        block.subtitle=asText(item.subtitle,450);block.src=imageUrl(item.src);
+      }
       if (item.type === 'map') {
         block.lat = Number(item.lat) >= -90 && Number(item.lat) <= 90 ? Number(item.lat) : 40.08;
         block.lon = Number(item.lon) >= -180 && Number(item.lon) <= 180 ? Number(item.lon) : 9.04;
@@ -1561,6 +1710,8 @@
   function showEmptyStories(editor) {
     const stage = $('storyStage');
     $('storyDocument').hidden = true;
+    if ($('storyReadingProgress')) $('storyReadingProgress').hidden = true;
+    if ($('storyChapterNav')) $('storyChapterNav').hidden = true;
     $('storySoundtrackAudio')?.pause();
     $('storySoundtrackPanel').hidden = true;
     stage.querySelector('.story-access-gate')?.remove();
@@ -1589,6 +1740,7 @@
     if (editorInitialized) return;
     editorInitialized = isEditor();
     bindSoundtrackEvents();
+    bindReadingProgress();
     if (editorInitialized) bindEvents();
     else {
       $('newStoryButton').hidden = true;
