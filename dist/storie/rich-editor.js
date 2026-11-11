@@ -157,14 +157,22 @@
 
     let sourceMode = false;
     let selectedRange = null;
+    let restoringSelection = false;
     const captureSelection = () => {
+      // Keep the last selection made INSIDE the editor. Opening a font menu
+      // moves focus away; a subsequent focus event must not overwrite it.
+      if (restoringSelection) return;
       const selection = window.getSelection();
       if (!selection?.rangeCount) return;
       const range = selection.getRangeAt(0);
       if (surface.contains(range.commonAncestorContainer))
         selectedRange = range.cloneRange();
     };
-    ['keyup','mouseup','focus','input'].forEach(event => surface.addEventListener(event,captureSelection));
+    ['keyup','mouseup','pointerup','touchend','input'].forEach(event =>
+      surface.addEventListener(event,captureSelection));
+    // Snapshot before a dropdown or color button steals focus. This also
+    // works for a selection spanning several paragraphs.
+    toolbar.addEventListener('pointerdown',captureSelection,true);
     const changed = () => { block.text = toMarkdown(surface,heading); queueSave(); };
     surface.addEventListener('input',changed);
     surface.addEventListener('paste',event => {
@@ -195,16 +203,34 @@
       queueSave();
     });
     const restoreSelection = () => {
-      surface.focus({preventScroll:true});
-      if (!selectedRange) return;
-      const selection = window.getSelection();
-      selection.removeAllRanges();
-      selection.addRange(selectedRange);
+      // Focus itself can collapse the browser selection; restore the saved
+      // clone only AFTER focusing, with selection capture suspended.
+      const range = selectedRange?.cloneRange();
+      if (!range || !surface.contains(range.commonAncestorContainer)) return false;
+      restoringSelection = true;
+      try {
+        surface.focus({preventScroll:true});
+        const selection = window.getSelection();
+        if (!selection) return false;
+        selection.removeAllRanges();
+        selection.addRange(range);
+        return true;
+      } catch (error) {
+        console.warn('Selezione testo non ripristinabile:',error);
+        return false;
+      } finally { restoringSelection = false; }
     };
     const execute = (command,value) => {
-      if (sourceMode) return;
-      restoreSelection();
-      document.execCommand(command,false,value ?? null);
+      if (sourceMode || !restoreSelection()) return;
+      // In Chrome/Firefox these commands create CSS spans that can be
+      // faithfully saved back as the existing safe Markdown font/color tags.
+      if (command === 'fontName' || command === 'foreColor')
+        document.execCommand('styleWithCSS',false,true);
+      const success = document.execCommand(command,false,value ?? null);
+      if (!success) {
+        console.warn('Formattazione non applicata:',command);
+        return;
+      }
       captureSelection();
       changed();
     };
@@ -277,6 +303,7 @@
       sourcePanel.hidden = !sourceMode;
       toggle.setAttribute('aria-pressed',String(sourceMode));
       toggle.textContent = sourceMode ? '✓ Testo formattato' : '</> Markdown';
+      selectedRange = null;
       (sourceMode ? source : surface).focus({preventScroll:true});
     });
 
