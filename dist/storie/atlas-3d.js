@@ -256,6 +256,15 @@
         }
       });
       root.append(picker);
+      root.append(ctx.control('ANCORAGGIO GEOGRAFICO DEL GLB', {
+        kind: 'select', value: block.anchorMode === 'center' ? 'center' : 'origin',
+        options: [
+          { value: 'origin', label: 'Origine del file GLB → punto scelto (consigliato)' },
+          { value: 'center', label: 'Centro geometrico GLB → punto scelto' }
+        ],
+        onChange: value => { edited('anchorMode', value); }
+      }));
+      root.append($('p', 'atlas3d-help', 'Il punto geografico non viene spostato. Gli offset servono a rifinire la posizione del modello rispetto all’ancora.'));
       const row = $('div','atlas3d-grid');
       const fields = [
         ['lat','LATITUDINE (WGS84)',-90,90],
@@ -264,7 +273,10 @@
         ['heading','ROTAZIONE NORD / HEADING (°)',-360,360],
         ['pitch','INCLINAZIONE / PITCH (°)',-360,360],
         ['roll','ROLL (°)',-360,360],
-        ['scale','SCALA (1 = ORIGINALE)',0.000001,1000000]
+        ['scale','SCALA (1 = ORIGINALE)',0.000001,1000000],
+        ['offsetEast','OFFSET EST (m)',-100000,100000],
+        ['offsetNorth','OFFSET NORD (m)',-100000,100000],
+        ['offsetUp','OFFSET ALTO (m)',-100000,100000]
       ];
       for (const [key,label,min,max] of fields) {
         row.append(ctx.control(label, {
