@@ -198,14 +198,18 @@
      const altitude=Number(block.altitude)||0;
      const scale=Math.max(.000001,Number(block.scale)||1);
      const heading=RAD(Number(block.heading)||0),pitch=RAD(Number(block.pitch)||0),roll=RAD(Number(block.roll)||0);
+     // Cesium Entity: posizione nel globo, non matrice grafica modificata manualmente.
+     // Per i nuovi e vecchi modelli il default e' aderente al terreno;
+     // la quota assoluta rimane disponibile in editor.
+     const terrainMode=block.altitudeMode!=='absolute';
      const position=C.Cartesian3.fromDegrees(lon,lat,altitude);
-     const offsetEast=Number(block.offsetEast)||0,offsetNorth=Number(block.offsetNorth)||0,offsetUp=Number(block.offsetUp)||0;
-     // ENU: offset in metri, indipendenti dalla rotazione e senza cambiare il punto GPS.
-     const enu=C.Transforms.eastNorthUpToFixedFrame(position);
-     const modelOrigin=C.Matrix4.multiplyByPoint(enu,new C.Cartesian3(offsetEast,offsetNorth,offsetUp),new C.Cartesian3());
-     const matrix=C.Transforms.headingPitchRollToFixedFrame(modelOrigin,new C.HeadingPitchRoll(heading,pitch,roll));
-     C.Matrix4.multiplyByUniformScale(matrix,scale,matrix);
-     const anchorMode=block.anchorMode==='center'?'center':'origin';
+     const offsetEast=Number(block.offsetEast)||0;
+     const offsetNorth=Number(block.offsetNorth)||0;
+     const offsetUp=Number(block.offsetUp)||0;
+     const entityBase=C.Cartesian3.fromDegrees(lon,lat,(terrainMode?0:altitude)+offsetUp);
+     const enu=C.Transforms.eastNorthUpToFixedFrame(entityBase);
+     const modelOrigin=C.Matrix4.multiplyByPoint(enu,new C.Cartesian3(offsetEast,offsetNorth,0),new C.Cartesian3());
+     const orientation=C.Transforms.headingPitchRollQuaternion(modelOrigin,new C.HeadingPitchRoll(heading,pitch,roll));
      const record={position,model:null,sphere:null,ready:false,errored:false,terrainHeight:null};
      total++;
      const name=block.caption||story.title||'Modello 3D';
@@ -213,12 +217,13 @@
      const button=document.createElement('button');button.type='button';button.className='model-button';
      const title=document.createElement('strong');title.textContent=name;
      const coords=document.createElement('small');
-     coords.textContent=lat.toFixed(6)+', '+lon.toFixed(6)+' · quota '+altitude+' m · Caricamento GLB…';
+     coords.textContent=lat.toFixed(6)+', '+lon.toFixed(6)+' · '+(terrainMode?'Aderente al terreno':'Quota '+altitude+' m')+' · Caricamento GLB…';
      button.append(title,coords);wrapper.append(button);
      const coordLabel=state=>{
        const terrain=record.terrainHeight;
-       const delta=terrain===null?'':(' · terreno '+terrain.toFixed(1)+' m (Δ '+(altitude-terrain).toFixed(1)+' m)');
-       coords.textContent=lat.toFixed(6)+', '+lon.toFixed(6)+' · quota GLB '+altitude+' m'+delta+' · '+state;
+       const delta=terrain===null?'':(' · DEM '+terrain.toFixed(1)+' m');
+       const quota=terrainMode?'aderente al terreno':'quota GLB '+altitude+' m';
+       coords.textContent=lat.toFixed(6)+', '+lon.toFixed(6)+' · '+quota+delta+' · '+state;
      };
      // Diagnostica del dislivello: anche un offset verticale introduce parallasse
      // nelle viste oblique. Non alteriamo la quota esplicitamente scelta.
@@ -240,56 +245,61 @@
      if(!selected)selected=record;
      if(record===autoFocus)focusArea(record,0);
      try {
-       const model=await C.Model.fromGltfAsync({
-         url,
-         // Coordinate geocentriche immutabili: ENU + heading/pitch/roll + scala.
-         // Mai forzare minimumPixelSize: cambia dimensione VISIVA secondo lo zoom
-         // e fa sembrare la scansione scollegata dal satellite.
-         modelMatrix:C.Matrix4.clone(matrix),
-         scale:1,
-         minimumPixelSize:0,
-         heightReference:C.HeightReference.NONE
+       const entity=viewer.entities.add({
+         id:'atlante-glb-'+block.id,
+         name,
+         position:modelOrigin,
+         orientation,
+         model:{
+           uri:url,
+           scale,
+           minimumPixelSize:0,
+           // La posizione verticale resta aderente al DEM mentre il terreno
+           // carica LOD differenti, senza parallasse artificiale rispetto alla mappa.
+           heightReference:terrainMode
+             ? C.HeightReference.RELATIVE_TO_GROUND
+             : C.HeightReference.NONE
+         }
        });
-       record.model=model;
-       const failed=error=>{
-         if(record.errored||record.ready)return;
-         record.errored=true;failures++;
-         console.error('GLB 3D:',name,error);
-         coords.textContent='Errore caricamento GLB. Consulta F12.';
+       record.model=entity;
+       const started=performance.now();
+       const sphere=new C.BoundingSphere();
+       let check=()=>{};
+       const done=(failed=false,details='')=>{
+         viewer.scene.postRender.removeEventListener(check);
+         if(failed){
+           record.errored=true;failures++;
+           coordLabel('GLB non disponibile'+(details?' · '+details:''));
+         }else{
+           record.ready=true;ready++;
+           coordLabel(terrainMode?'GLB agganciato al terreno':'GLB a quota assoluta');
+         }
          refresh();
        };
-       model.errorEvent?.addEventListener(failed);
-       // Le proprieta' geometriche del modello sono leggibili soltanto dopo readyEvent.
-       const onReady=()=>{
+       check=()=>{
          if(record.ready||record.errored)return;
          try{
-           const sphere=model.boundingSphere;
-           if(!sphere||!Number.isFinite(sphere.radius)||sphere.radius<=0)throw Error('Bounding sphere assente');
-           // L'origine GLB coincide col punto geografico (con offset opzionali).
-           // Non traslare il centro geometrico se il georeferenziamento usa l'origine.
-           if(anchorMode==='center'){
-             const delta=C.Cartesian3.subtract(modelOrigin,sphere.center,new C.Cartesian3());
-             const aligned=C.Matrix4.clone(model.modelMatrix);
-             const trans=C.Matrix4.getTranslation(aligned,new C.Cartesian3());
-             C.Matrix4.setTranslation(aligned,C.Cartesian3.add(trans,delta,new C.Cartesian3()),aligned);
-             model.modelMatrix=aligned;
-             record.sphere=new C.BoundingSphere(modelOrigin,sphere.radius);
-           }else{
+           const state=viewer.dataSourceDisplay.getBoundingSphere(entity,false,sphere);
+           if(state===C.BoundingSphereState.DONE && Number.isFinite(sphere.radius) && sphere.radius>0){
              record.sphere=C.BoundingSphere.clone(sphere);
+             done();
+             if(record===autoFocus && !cameraInteracted)focusModel(record,1.7);
+           }else if(performance.now()-started>25000){
+             console.warn('GLB non pronto dopo 25 secondi:',url,state);
+             done(true,'controlla la console F12');
            }
-           record.ready=true;ready++;
-           coordLabel('GLB pronto');
-           refresh();
-           if(record===autoFocus && !cameraInteracted)focusModel(record,1.7);
-         }catch(error){failed(error);}
+         }catch(error){
+           console.error('Errore visualizzazione modello geoancorato:',error);
+           done(true,String(error?.message||error));
+         }
        };
-       model.readyEvent.addEventListener(onReady);
-       viewer.scene.primitives.add(model);
-       if(model.ready)onReady();
-     } catch(error) {
+       viewer.scene.postRender.addEventListener(check);
+       // La chiamata asincrona avviene in Cesium, senza riposizionare il GLB
+       // in funzione della telecamera, del pan o delle dimensioni del canvas.
+     }catch(error){
        record.errored=true;failures++;
-       console.error('Errore caricamento GLB:',name,error);
-       coords.textContent='Impossibile aprire il GLB: '+(error?.message||String(error));
+       console.error('Errore entita modello Cesium:',name,error);
+       coordLabel('Errore GLB · '+(error?.message||String(error)));
      }
      refresh();
    }
