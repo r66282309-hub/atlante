@@ -87,8 +87,14 @@
      baseLayer: new C.ImageryLayer(new C.OpenStreetMapImageryProvider({url:'https://tile.openstreetmap.org/'}))
    });
  }catch(error){status.textContent='Errore inizializzazione Cesium: '+error.message;return}
- // Il GLB deve restare ispezionabile anche se la quota iniziale lo colloca sotto il DEM.
+ // Durante la calibrazione il modello resta visibile anche con quota sotto il DEM.
  viewer.scene.globe.depthTestAgainstTerrain=false;
+ // Un click o un trascinamento dell'utente interrompe gli spostamenti automatici
+ // della telecamera: il modello non deve sembrare inseguire il pan.
+ let cameraInteracted=false;
+ const stopAutoFly=()=>{cameraInteracted=true; viewer.camera.cancelFlight();};
+ viewer.canvas.addEventListener('pointerdown',stopAutoFly,{passive:true});
+ viewer.canvas.addEventListener('wheel',()=>{cameraInteracted=true;},{passive:true});
  const controller=viewer.scene.screenSpaceCameraController;
  // LEFT_DRAG in Cesium 3D trascina la superficie (pan);
  // RIGHT_DRAG inclina e ruota il punto di vista.
@@ -200,15 +206,20 @@
      const matrix=C.Transforms.headingPitchRollToFixedFrame(modelOrigin,new C.HeadingPitchRoll(heading,pitch,roll));
      C.Matrix4.multiplyByUniformScale(matrix,scale,matrix);
      const anchorMode=block.anchorMode==='center'?'center':'origin';
-     const record={position,model:null,sphere:null,ready:false,errored:false};
+     const record={position,model:null,sphere:null,ready:false,errored:false,terrainHeight:null};
      total++;
      const name=block.caption||story.title||'Modello 3D';
      // Un marcatore identifica SEMPRE le coordinate dichiarate, anche se il GLB non si apre.
      viewer.entities.add({
-       position,
-       point:{pixelSize:13,color:C.Color.ORANGE,outlineColor:C.Color.WHITE,outlineWidth:3,disableDepthTestDistance:Number.POSITIVE_INFINITY},
-       label:{text:name,font:'bold 15px sans-serif',fillColor:C.Color.WHITE,showBackground:true,
+       // Questo riferimento GPS e' appoggiato al DEM, non alla quota del GLB.
+       // Se il modello sembra spostarsi rispetto al pin, verificare la quota.
+       position:C.Cartesian3.fromDegrees(lon,lat),
+       point:{pixelSize:13,color:C.Color.ORANGE,outlineColor:C.Color.WHITE,outlineWidth:3,
+         heightReference:C.HeightReference.CLAMP_TO_GROUND,
+         disableDepthTestDistance:Number.POSITIVE_INFINITY},
+       label:{text:name+' · punto GPS',font:'bold 15px sans-serif',fillColor:C.Color.WHITE,showBackground:true,
          backgroundColor:C.Color.fromCssColorString('#193433'),backgroundPadding:new C.Cartesian2(9,5),
+         heightReference:C.HeightReference.CLAMP_TO_GROUND,
          pixelOffset:new C.Cartesian2(0,-30),style:C.LabelStyle.FILL,disableDepthTestDistance:Number.POSITIVE_INFINITY}
      });
      const wrapper=document.createElement('div');wrapper.className='model-item';
@@ -217,6 +228,20 @@
      const coords=document.createElement('small');
      coords.textContent=lat.toFixed(6)+', '+lon.toFixed(6)+' · quota '+altitude+' m · Caricamento GLB…';
      button.append(title,coords);wrapper.append(button);
+     const coordLabel=state=>{
+       const terrain=record.terrainHeight;
+       const delta=terrain===null?'':(' · terreno '+terrain.toFixed(1)+' m (Δ '+(altitude-terrain).toFixed(1)+' m)');
+       coords.textContent=lat.toFixed(6)+', '+lon.toFixed(6)+' · quota GLB '+altitude+' m'+delta+' · '+state;
+     };
+     // Diagnostica del dislivello: anche un offset verticale introduce parallasse
+     // nelle viste oblique. Non alteriamo la quota esplicitamente scelta.
+     if(terrainAvailable && C.sampleTerrainMostDetailed && terrainProvider.availability){
+       C.sampleTerrainMostDetailed(terrainProvider,[C.Cartographic.fromDegrees(lon,lat)])
+         .then(samples=>{
+           const h=samples[0]?.height;
+           if(Number.isFinite(h)){record.terrainHeight=h;coordLabel(record.ready?'GLB pronto':'Caricamento GLB…');}
+         }).catch(error=>console.warn('Campionamento quota terreno non riuscito:',error));
+     }
      const link=document.createElement('a');link.href='../storie/?story='+encodeURIComponent(story.id);
      link.textContent='Apri geostoria';wrapper.append(link);list.append(wrapper);
      button.addEventListener('click',()=>{
@@ -229,7 +254,13 @@
      if(record===autoFocus)focusArea(record,0);
      try {
        const model=await C.Model.fromGltfAsync({
-         url,modelMatrix:matrix,minimumPixelSize:70,maximumScale:100000,
+         url,
+         // Coordinate geocentriche immutabili: ENU + heading/pitch/roll + scala.
+         // Mai forzare minimumPixelSize: cambia dimensione VISIVA secondo lo zoom
+         // e fa sembrare la scansione scollegata dal satellite.
+         modelMatrix:C.Matrix4.clone(matrix),
+         scale:1,
+         minimumPixelSize:0,
          heightReference:C.HeightReference.NONE
        });
        record.model=model;
@@ -260,9 +291,9 @@
              record.sphere=C.BoundingSphere.clone(sphere);
            }
            record.ready=true;ready++;
-           coords.textContent=lat.toFixed(6)+', '+lon.toFixed(6)+' · quota '+altitude+' m · GLB pronto';
+           coordLabel('GLB pronto');
            refresh();
-           if(record===autoFocus)focusModel(record,1.7);
+           if(record===autoFocus && !cameraInteracted)focusModel(record,1.7);
          }catch(error){failed(error);}
        };
        model.readyEvent.addEventListener(onReady);
@@ -280,8 +311,10 @@
  // La vista iniziale e' volutamente prospettica: non una pianta zenitale.
  if(!autoFocus && selected)autoFocus=selected;
  if(autoFocus) {
-   if(autoFocus.ready)focusModel(autoFocus,0);
-   else focusArea(autoFocus,0);
+   if(!cameraInteracted) {
+     if(autoFocus.ready)focusModel(autoFocus,0);
+     else focusArea(autoFocus,0);
+   }
  } else {
    const sardinia=C.Cartesian3.fromDegrees(9.04,40.08,350);
    focus(sardinia,30000,220000,-35,1.2);
