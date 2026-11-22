@@ -12,6 +12,10 @@
    .model-button:hover{border-color:#9cb4a5}.model-button small{display:block;margin-top:4px;color:#65786e}
    .notice{border-left:3px solid #b77956;padding-left:9px;color:#66442f}
    a{color:#1e5e55}#status{font-size:12px;color:#496358} .links{display:flex;gap:14px;font-size:12px}
+   .view-controls{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}.view-controls button{padding:9px 10px;cursor:pointer;font:600 12px Arial,sans-serif;border-radius:8px;border:1px solid #cad7cf;background:#fff;color:#193433}
+   .view-controls button.is-active{background:#193433;color:#fff}.map-hint{font-size:11px;opacity:.8;margin:6px 0}
+   .model-item{margin:7px 0;background:white;border:1px solid #dbe2dc;border-radius:9px;padding:5px}.model-item>a{display:block;font-size:11px;margin:0 8px 7px}
+   .model-button{width:100%}.model-button strong{display:block}
   </style>
   <script src="../config.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.79.0"></script>
@@ -24,7 +28,13 @@
 <aside>
   <h1>Atlante <em>3D.</em></h1>
   <div class="links"><a href="../">← Mappa 2D</a><a href="../storie/">Geostorie</a></div>
-  <p>Modelli GLB georeferenziati manualmente (metodo A). Coordinate EPSG:4326, quota ellissoidica e orientamento locale.</p>
+  <p>Modelli GLB georeferenziati manualmente (metodo A). Terreno 3D reale, coordinate EPSG:4326, quota ellissoidica.</p>
+  <div class="view-controls" role="group" aria-label="Inquadratura tridimensionale">
+    <button type="button" id="view3d" class="is-active">⛰ Vista 3D</button>
+    <button type="button" id="viewModel">⬡ Modello</button>
+    <button type="button" id="viewTop">▦ Dall'alto</button>
+  </div>
+  <p class="map-hint">Trascina per ruotare · rotellina per avvicinarti · Ctrl + trascina per inclinare.</p>
   <p id="status" role="status">Caricamento modelli…</p>
   <div id="models"></div>
   <p id="terrain-note" class="notice" hidden>Terreno 3D non configurato: è visualizzato l'ellissoide WGS84. Per usare il rilievo reale occorre configurare un provider terrain autorizzato.</p>
@@ -65,12 +75,14 @@
  try {
    viewer=new C.Viewer('globe',{
      baseLayerPicker:false,geocoder:false,animation:false,timeline:false,homeButton:true,
+     sceneMode:C.SceneMode.SCENE3D,scene3DOnly:true,
      navigationHelpButton:false,sceneModePicker:false,fullscreenButton:true,
      terrainProvider,
      baseLayer: new C.ImageryLayer(new C.OpenStreetMapImageryProvider({url:'https://tile.openstreetmap.org/'}))
    });
  }catch(error){status.textContent='Errore inizializzazione Cesium: '+error.message;return}
- viewer.scene.globe.depthTestAgainstTerrain=true;
+ // Il GLB deve restare ispezionabile anche se la quota iniziale lo colloca sotto il DEM.
+ viewer.scene.globe.depthTestAgainstTerrain=false;
  viewer.scene.renderError.addEventListener((scene,error) => {
    console.error('Errore rendering Cesium su questo dispositivo:',error);
    status.textContent='Rendering Cesium interrotto: ' + (error?.message || String(error?.statusCode || 'risorsa 3D non disponibile'));
@@ -79,49 +91,141 @@
  const {data,error}=await sb.from('geostories').select('id,title,blocks,published').eq('published',true);
  if(error){status.textContent='Impossibile leggere i modelli: '+error.message;return}
  const params=new URLSearchParams(location.search);
- let loaded=0;
- for(const story of data||[]){
-  for(const block of story.blocks||[]){
-   if(block?.type!=='model3d')continue;
-   const url=safeGLB(block.url),lat=Number(block.lat),lon=Number(block.lon);
-   if(!url||block.lat==null||block.lon==null||!Number.isFinite(lat)||Math.abs(lat)>90||!Number.isFinite(lon)||Math.abs(lon)>180)continue;
-   const altitude=Number(block.altitude)||0,scale=Number(block.scale)||1;
-   const heading=C.Math.toRadians(Number(block.heading)||0),pitch=C.Math.toRadians(Number(block.pitch)||0),roll=C.Math.toRadians(Number(block.roll)||0);
-   const position=C.Cartesian3.fromDegrees(lon,lat,altitude);
-   const hpr=new C.HeadingPitchRoll(heading,pitch,roll);
-   const modelMatrix=C.Transforms.headingPitchRollToFixedFrame(position,hpr);
-   C.Matrix4.multiplyByUniformScale(modelMatrix,Math.max(.000001,scale),modelMatrix);
-   let model;
-   try{
-     model=await C.Model.fromGltfAsync({url,modelMatrix,minimumPixelSize:25,maximumScale:100000});
-     viewer.scene.primitives.add(model);
-   }catch(err){console.warn('GLB non caricato:',url,err);continue}
-   const name=block.caption||story.title||'Modello senza nome';
-   const button=document.createElement('button');button.type='button';button.className='model-button';
-   const title=document.createElement('strong');title.textContent=name;
-   const coords=document.createElement('small');coords.textContent=lat.toFixed(6)+', '+lon.toFixed(6)+' · quota '+altitude+' m';
-   button.append(title,coords);list.append(button);
-   // Non usare model.boundingSphere prima che sceneGraph sia inizializzato.
-   // Inquadratura sicura in metri sopra la quota ellissoidica del modello.
-   const fly=()=>viewer.camera.flyTo({
-     destination:C.Cartesian3.fromDegrees(lon,lat,altitude+600),
-     orientation:{heading:0,pitch:-C.Math.PI_OVER_TWO,roll:0},
-     duration:1.3
+ const RAD=C.Math.toRadians;
+ let total=0, ready=0, failures=0, selected=null, autoFocus=null;
+ const buttons={area:document.getElementById('view3d'),model:document.getElementById('viewModel'),top:document.getElementById('viewTop')};
+ const setActive=name=>Object.entries(buttons).forEach(([mode,button])=>button.classList.toggle('is-active',mode===name));
+ const focus=(position,radius,range,pitch=-31,duration=1.4)=>{
+   if(!position)return;
+   viewer.camera.flyToBoundingSphere(new C.BoundingSphere(position,Math.max(1,radius)),{
+     duration,offset:new C.HeadingPitchRange(RAD(28),RAD(pitch),Math.max(range,Math.max(1,radius)*2.6))
    });
-   button.addEventListener('click',fly);
-   const link=document.createElement('a');link.href='../storie/?story='+encodeURIComponent(story.id);link.textContent='Apri geostoria';link.style.fontSize='11px';button.append(document.createTextNode(' · '),link);
-   if((params.get('story')===story.id&&params.get('block')===block.id)||(!params.has('story')&&!loaded))setTimeout(fly,700);
-   loaded++;
-  }
+ };
+ const focusArea=(record,duration=1.4)=>{
+   if(!record)return;
+   selected=record;
+   setActive('area');
+   focus(record.position,30,1400,-29,duration);
+ };
+ const focusModel=(record,duration=1.4)=>{
+   if(!record)return;
+   selected=record;
+   setActive('model');
+   const sphere=record.sphere || new C.BoundingSphere(record.position,30);
+   const range=Math.min(12000,Math.max(35,sphere.radius*3.3));
+   focus(sphere.center,sphere.radius,range,-32,duration);
+ };
+ const focusTop=(record)=>{
+   if(!record)return;
+   selected=record;
+   setActive('top');
+   const sphere=record.sphere || new C.BoundingSphere(record.position,30);
+   focus(sphere.center,sphere.radius,Math.max(120,sphere.radius*4),-90);
+ };
+ buttons.area.addEventListener('click',()=>focusArea(selected));
+ buttons.model.addEventListener('click',()=>focusModel(selected));
+ buttons.top.addEventListener('click',()=>focusTop(selected));
+ const refresh=()=>{
+   if(!total)status.textContent='Nessun modello GLB pubblicato con coordinate geografiche.';
+   else status.textContent=ready+' modelli pronti su '+total+(failures?' · '+failures+' errori di caricamento':'')+
+     (ready<total-failures?' · caricamento in corso…':'');
+ };
+ for(const story of data||[]){
+   for(const block of story.blocks||[]){
+     if(block?.type!=='model3d')continue;
+     const url=safeGLB(block.url),lat=Number(block.lat),lon=Number(block.lon);
+     if(!url||block.lat==null||block.lon==null||!Number.isFinite(lat)||Math.abs(lat)>90||!Number.isFinite(lon)||Math.abs(lon)>180)continue;
+     const altitude=Number(block.altitude)||0;
+     const scale=Math.max(.000001,Number(block.scale)||1);
+     const heading=RAD(Number(block.heading)||0),pitch=RAD(Number(block.pitch)||0),roll=RAD(Number(block.roll)||0);
+     const position=C.Cartesian3.fromDegrees(lon,lat,altitude);
+     const matrix=C.Transforms.headingPitchRollToFixedFrame(position,new C.HeadingPitchRoll(heading,pitch,roll));
+     C.Matrix4.multiplyByUniformScale(matrix,scale,matrix);
+     const record={position,model:null,sphere:null,ready:false,errored:false};
+     total++;
+     const name=block.caption||story.title||'Modello 3D';
+     // Un marcatore identifica SEMPRE le coordinate dichiarate, anche se il GLB non si apre.
+     viewer.entities.add({
+       position,
+       point:{pixelSize:13,color:C.Color.ORANGE,outlineColor:C.Color.WHITE,outlineWidth:3,disableDepthTestDistance:Number.POSITIVE_INFINITY},
+       label:{text:name,font:'bold 15px sans-serif',fillColor:C.Color.WHITE,showBackground:true,
+         backgroundColor:C.Color.fromCssColorString('#193433'),backgroundPadding:new C.Cartesian2(9,5),
+         pixelOffset:new C.Cartesian2(0,-30),style:C.LabelStyle.FILL,disableDepthTestDistance:Number.POSITIVE_INFINITY}
+     });
+     const wrapper=document.createElement('div');wrapper.className='model-item';
+     const button=document.createElement('button');button.type='button';button.className='model-button';
+     const title=document.createElement('strong');title.textContent=name;
+     const coords=document.createElement('small');
+     coords.textContent=lat.toFixed(6)+', '+lon.toFixed(6)+' · quota '+altitude+' m · Caricamento GLB…';
+     button.append(title,coords);wrapper.append(button);
+     const link=document.createElement('a');link.href='../storie/?story='+encodeURIComponent(story.id);
+     link.textContent='Apri geostoria';wrapper.append(link);list.append(wrapper);
+     button.addEventListener('click',()=>{
+       if(record.ready)focusModel(record);
+       else focusArea(record);
+     });
+     const requested=params.get('story')===story.id&&params.get('block')===block.id;
+     if(!autoFocus && (requested || !params.has('story')))autoFocus=record;
+     if(!selected)selected=record;
+     try {
+       const model=await C.Model.fromGltfAsync({
+         url,modelMatrix:matrix,minimumPixelSize:70,maximumScale:100000,
+         heightReference:C.HeightReference.NONE
+       });
+       record.model=model;
+       const failed=error=>{
+         if(record.errored||record.ready)return;
+         record.errored=true;failures++;
+         console.error('GLB 3D:',name,error);
+         coords.textContent='Errore caricamento GLB. Consulta F12.';
+         refresh();
+       };
+       model.errorEvent?.addEventListener(failed);
+       // Le proprieta' geometriche del modello sono leggibili soltanto dopo readyEvent.
+       const onReady=()=>{
+         if(record.ready||record.errored)return;
+         try{
+           const sphere=model.boundingSphere;
+           if(!sphere||!Number.isFinite(sphere.radius)||sphere.radius<=0)throw Error('Bounding sphere assente');
+           // Allinea il centro del modello alle coordinate scelte, anche se il GLB
+           // contiene un'origine locale decentrata. La scala e la rotazione restano.
+           const delta=C.Cartesian3.subtract(position,sphere.center,new C.Cartesian3());
+           const aligned=C.Matrix4.clone(model.modelMatrix);
+           const oldTranslation=C.Matrix4.getTranslation(aligned,new C.Cartesian3());
+           const newTranslation=C.Cartesian3.add(oldTranslation,delta,new C.Cartesian3());
+           C.Matrix4.setTranslation(aligned,newTranslation,aligned);
+           model.modelMatrix=aligned;
+           record.sphere=new C.BoundingSphere(position,sphere.radius);
+           record.ready=true;ready++;
+           coords.textContent=lat.toFixed(6)+', '+lon.toFixed(6)+' · quota '+altitude+' m · GLB pronto';
+           refresh();
+           if(record===autoFocus)focusModel(record,1.7);
+         }catch(error){failed(error);}
+       };
+       model.readyEvent.addEventListener(onReady);
+       viewer.scene.primitives.add(model);
+       if(model.ready)onReady();
+     } catch(error) {
+       record.errored=true;failures++;
+       console.error('Errore caricamento GLB:',name,error);
+       coords.textContent='Impossibile aprire il GLB: '+(error?.message||String(error));
+     }
+     refresh();
+   }
  }
- status.textContent=loaded?loaded+' modelli 3D posizionati':'Nessun modello GLB pubblicato: carica il modello di Loelle in una Geostoria per visualizzarlo qui.';
+ refresh();
+ // La vista iniziale e' volutamente prospettica: non una pianta zenitale.
+ if(autoFocus)focusArea(autoFocus,0);
+ else {
+   const sardinia=C.Cartesian3.fromDegrees(9.04,40.08,350);
+   focus(sardinia,30000,220000,-35,1.2);
+ }
  if(terrainAvailable) {
    const caption=document.createElement('p');
    caption.textContent='Rilievo 3D: Re:Earth Terrain · Mapterhorn (CC BY 4.0), quote ellissoidiche.';
    caption.style.fontSize='11px';caption.style.color='#52685e';
    list.after(caption);
  }
- if(!loaded) viewer.camera.flyTo({destination:C.Cartesian3.fromDegrees(9.04,40.08,850000)});
 })();
 </script>
 </body></html>
