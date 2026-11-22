@@ -256,6 +256,14 @@
         }
       });
       root.append(picker);
+      root.append(ctx.control('QUOTA MODELLO SULLA MAPPA 3D', {
+        kind:'select', value:block.altitudeMode === 'absolute' ? 'absolute' : 'terrain',
+        options:[
+          {value:'terrain',label:'Agganciato al terreno (consigliato)'},
+          {value:'absolute',label:'Quota ellissoidica assoluta'}
+        ],
+        onChange:value=>{edited('altitudeMode',value);}
+      }));
       root.append(ctx.control('ANCORAGGIO GEOGRAFICO DEL GLB', {
         kind: 'select', value: block.anchorMode === 'center' ? 'center' : 'origin',
         options: [
