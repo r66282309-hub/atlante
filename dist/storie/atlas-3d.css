@@ -20,3 +20,5 @@
 .atlas3d-map-link{display:inline-block;color:#27756b;text-decoration:underline;text-underline-offset:3px;font-weight:700;font-size:13px}
 .atlas3d-caption{font-size:13px;line-height:1.6;color:#65736d}
 @media(max-width:650px){.atlas3d-stage{height:340px}.atlas3d-grid{grid-template-columns:1fr}.atlas3d-controls button{font-size:10px;padding:7px}}
+
+.atlas3d-help{font-size:11px;line-height:1.5;color:#67766d;margin:2px 0 9px}
