@@ -16,6 +16,7 @@
    .view-controls button.is-active{background:#193433;color:#fff}.map-hint{font-size:11px;opacity:.8;margin:6px 0}
    .model-item{margin:7px 0;background:white;border:1px solid #dbe2dc;border-radius:9px;padding:5px}.model-item>a{display:block;font-size:11px;margin:0 8px 7px}
    .model-button{width:100%}.model-button strong{display:block}
+   .satellite-note{font-size:10px;color:#777e75;margin:6px 0}
   </style>
   <script src="../config.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.79.0"></script>
@@ -34,7 +35,12 @@
     <button type="button" id="viewModel">⬡ Modello</button>
     <button type="button" id="viewTop">▦ Dall'alto</button>
   </div>
-  <p class="map-hint">Trascina per ruotare · rotellina per avvicinarti · Ctrl + trascina per inclinare.</p>
+  <div class="view-controls" role="group" aria-label="Sfondo cartografico">
+    <button type="button" id="viewSatellite" class="is-active">◉ Google Satellite</button>
+    <button type="button" id="viewOsm">▤ OpenStreetMap</button>
+  </div>
+  <p class="map-hint"><b>Sinistro:</b> sposta la mappa · <b>Destro:</b> ruota/inclina · <b>Rotellina:</b> zoom.</p>
+  <p class="satellite-note" id="satelliteInfo">Fonte Google Satellite configurata in Atlante (endpoint non ufficiale).</p>
   <p id="status" role="status">Caricamento modelli…</p>
   <div id="models"></div>
   <p id="terrain-note" class="notice" hidden>Terreno 3D non configurato: è visualizzato l'ellissoide WGS84. Per usare il rilievo reale occorre configurare un provider terrain autorizzato.</p>
@@ -83,6 +89,54 @@
  }catch(error){status.textContent='Errore inizializzazione Cesium: '+error.message;return}
  // Il GLB deve restare ispezionabile anche se la quota iniziale lo colloca sotto il DEM.
  viewer.scene.globe.depthTestAgainstTerrain=false;
+ const controller=viewer.scene.screenSpaceCameraController;
+ // LEFT_DRAG in Cesium 3D trascina la superficie (pan);
+ // RIGHT_DRAG inclina e ruota il punto di vista.
+ controller.rotateEventTypes=C.CameraEventType.LEFT_DRAG;
+ controller.translateEventTypes=C.CameraEventType.LEFT_DRAG;
+ controller.tiltEventTypes=[C.CameraEventType.RIGHT_DRAG,C.CameraEventType.PINCH];
+ controller.zoomEventTypes=[C.CameraEventType.WHEEL,C.CameraEventType.PINCH];
+ controller.lookEventTypes={eventType:C.CameraEventType.LEFT_DRAG,modifier:C.KeyboardEventModifier.SHIFT};
+ viewer.canvas.addEventListener('contextmenu',event=>event.preventDefault());
+
+ // Satellite predefinito, con OSM in riserva; medesima configurazione della mappa 2D.
+ const osmLayer=viewer.imageryLayers.get(0);
+ const satelliteButton=document.getElementById('viewSatellite');
+ const osmButton=document.getElementById('viewOsm');
+ let satelliteLayer=null;
+ let satelliteErrors=0;
+ const setBasemap=mode=>{
+   const sat=mode==='satellite'&&Boolean(satelliteLayer);
+   if(satelliteLayer)satelliteLayer.show=sat;
+   if(osmLayer)osmLayer.show=!sat;
+   satelliteButton.classList.toggle('is-active',sat);
+   osmButton.classList.toggle('is-active',!sat);
+ };
+ try {
+   if(!cfg.satellite?.url)throw Error('URL satellite non configurato');
+   const satelliteProvider=new C.UrlTemplateImageryProvider({
+     url:cfg.satellite.url,
+     credit:new C.Credit('© Google'),
+     maximumLevel:Number(cfg.satellite.maxNativeZoom)||20,
+     tilingScheme:new C.WebMercatorTilingScheme()
+   });
+   satelliteLayer=viewer.imageryLayers.addImageryProvider(satelliteProvider);
+   satelliteProvider.errorEvent.addEventListener(error=>{
+     if(!satelliteLayer?.show)return;
+     if(++satelliteErrors>=5) {
+       console.warn('Satellite non raggiungibile, ripristinata OSM',error);
+       document.getElementById('satelliteInfo').textContent='Satellite non disponibile, attivata OSM.';
+       setBasemap('osm');
+     }
+   });
+   setBasemap('satellite');
+ } catch(error) {
+   console.warn('Sfondo satellite non disponibile:',error);
+   document.getElementById('satelliteInfo').textContent='Satellite non disponibile, attivata OSM.';
+   setBasemap('osm');
+ }
+ satelliteButton.addEventListener('click',()=>{satelliteErrors=0;setBasemap('satellite')});
+ osmButton.addEventListener('click',()=>setBasemap('osm'));
  viewer.scene.renderError.addEventListener((scene,error) => {
    console.error('Errore rendering Cesium su questo dispositivo:',error);
    status.textContent='Rendering Cesium interrotto: ' + (error?.message || String(error?.statusCode || 'risorsa 3D non disponibile'));
@@ -139,8 +193,13 @@
      const scale=Math.max(.000001,Number(block.scale)||1);
      const heading=RAD(Number(block.heading)||0),pitch=RAD(Number(block.pitch)||0),roll=RAD(Number(block.roll)||0);
      const position=C.Cartesian3.fromDegrees(lon,lat,altitude);
-     const matrix=C.Transforms.headingPitchRollToFixedFrame(position,new C.HeadingPitchRoll(heading,pitch,roll));
+     const offsetEast=Number(block.offsetEast)||0,offsetNorth=Number(block.offsetNorth)||0,offsetUp=Number(block.offsetUp)||0;
+     // ENU: offset in metri, indipendenti dalla rotazione e senza cambiare il punto GPS.
+     const enu=C.Transforms.eastNorthUpToFixedFrame(position);
+     const modelOrigin=C.Matrix4.multiplyByPoint(enu,new C.Cartesian3(offsetEast,offsetNorth,offsetUp),new C.Cartesian3());
+     const matrix=C.Transforms.headingPitchRollToFixedFrame(modelOrigin,new C.HeadingPitchRoll(heading,pitch,roll));
      C.Matrix4.multiplyByUniformScale(matrix,scale,matrix);
+     const anchorMode=block.anchorMode==='center'?'center':'origin';
      const record={position,model:null,sphere:null,ready:false,errored:false};
      total++;
      const name=block.caption||story.title||'Modello 3D';
@@ -188,15 +247,18 @@
          try{
            const sphere=model.boundingSphere;
            if(!sphere||!Number.isFinite(sphere.radius)||sphere.radius<=0)throw Error('Bounding sphere assente');
-           // Allinea il centro del modello alle coordinate scelte, anche se il GLB
-           // contiene un'origine locale decentrata. La scala e la rotazione restano.
-           const delta=C.Cartesian3.subtract(position,sphere.center,new C.Cartesian3());
-           const aligned=C.Matrix4.clone(model.modelMatrix);
-           const oldTranslation=C.Matrix4.getTranslation(aligned,new C.Cartesian3());
-           const newTranslation=C.Cartesian3.add(oldTranslation,delta,new C.Cartesian3());
-           C.Matrix4.setTranslation(aligned,newTranslation,aligned);
-           model.modelMatrix=aligned;
-           record.sphere=new C.BoundingSphere(position,sphere.radius);
+           // L'origine GLB coincide col punto geografico (con offset opzionali).
+           // Non traslare il centro geometrico se il georeferenziamento usa l'origine.
+           if(anchorMode==='center'){
+             const delta=C.Cartesian3.subtract(modelOrigin,sphere.center,new C.Cartesian3());
+             const aligned=C.Matrix4.clone(model.modelMatrix);
+             const trans=C.Matrix4.getTranslation(aligned,new C.Cartesian3());
+             C.Matrix4.setTranslation(aligned,C.Cartesian3.add(trans,delta,new C.Cartesian3()),aligned);
+             model.modelMatrix=aligned;
+             record.sphere=new C.BoundingSphere(modelOrigin,sphere.radius);
+           }else{
+             record.sphere=C.BoundingSphere.clone(sphere);
+           }
            record.ready=true;ready++;
            coords.textContent=lat.toFixed(6)+', '+lon.toFixed(6)+' · quota '+altitude+' m · GLB pronto';
            refresh();
