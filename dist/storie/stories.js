@@ -1463,7 +1463,7 @@
       case 'compare': return { ...common, before: '', after: '', beforeLabel: 'Prima', afterLabel: 'Dopo', caption: '' };
       case 'timeline': return { ...common, events: [], showMap: false, routeSource: 'none', routeBlockId: '', segments: [], basemap: 'osm' };
       case 'chapter': return { ...common, kicker: 'UN NUOVO CAPITOLO', title: 'Una nuova tappa', subtitle: '', src: '' };
-      case 'model3d': return { ...common, url:'', caption:'', lat: null, lon: null, altitude:0, heading:0, pitch:0, roll:0, scale:1, anchorMode:'origin', offsetEast:0, offsetNorth:0, offsetUp:0 };
+      case 'model3d': return { ...common, url:'', caption:'', lat: null, lon: null, altitude:0, heading:0, pitch:0, roll:0, scale:1, anchorMode:'origin', altitudeMode:'terrain', offsetEast:0, offsetNorth:0, offsetUp:0 };
       case 'map': return { ...common, lat: Number(state.waypoints[0]?.lat || 40.08), lon: Number(state.waypoints[0]?.lon || 9.04), zoom: 11, basemap: 'osm', caption: '' };
       default: return { ...common, text: '' };
     }
@@ -1720,6 +1720,7 @@
         block.heading=num(item.heading,-360,360,0);block.pitch=num(item.pitch,-360,360,0);
         block.roll=num(item.roll,-360,360,0);block.scale=num(item.scale,0.000001,1000000,1);
         block.anchorMode=item.anchorMode==='center'?'center':'origin';
+        block.altitudeMode=item.altitudeMode==='absolute'?'absolute':'terrain';
         block.offsetEast=num(item.offsetEast,-100000,100000,0);
         block.offsetNorth=num(item.offsetNorth,-100000,100000,0);
         block.offsetUp=num(item.offsetUp,-100000,100000,0);
