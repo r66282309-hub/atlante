@@ -1,0 +1,22 @@
+/* Atlante: visualizzatore 3D integrato nelle Geostorie */
+.atlas3d-block{display:flex;flex-direction:column;gap:13px;min-width:0}
+.atlas3d-container{width:100%;min-width:0}
+.atlas3d-stage{height:420px;min-height:280px;position:relative;overflow:hidden;background:#172c30;border-radius:12px;isolation:isolate}
+.atlas3d-stage canvas{display:block;width:100%;height:100%;touch-action:none}
+.atlas3d-status,.atlas3d-measurement{position:absolute;z-index:2;left:15px;right:15px;color:#f2f2ea;font-size:12px;pointer-events:none}
+.atlas3d-status{top:45%;text-align:center}.atlas3d-measurement{bottom:62px;text-align:center;text-shadow:0 1px 3px #000}
+.atlas3d-controls{position:absolute;left:9px;right:9px;bottom:8px;z-index:3;display:flex;flex-wrap:wrap;gap:5px;justify-content:center}
+.atlas3d-controls[hidden]{display:none}
+.atlas3d-controls button,.atlas3d-load{border:1px solid #ffffff55;border-radius:6px;background:#152b2cdb;color:#fff;padding:7px 9px;font:600 11px/1.2 inherit;cursor:pointer}
+.atlas3d-controls button[aria-pressed=true]{background:#b77956}
+.atlas3d-load{position:absolute;z-index:4;top:50%;left:50%;transform:translate(-50%,-50%);padding:13px 18px}
+.atlas3d-empty{padding:30px;text-align:center;border:1px dashed #becbc1;border-radius:10px}
+.atlas3d-upload-row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.atlas3d-upload-row small{font-size:11px;color:#777}
+.atlas3d-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.atlas3d-grid label{min-width:0}
+.atlas3d-map-picker{background:#e8eee7;color:#1a423b;border:1px solid #ced9ce;padding:10px 13px;border-radius:8px;cursor:pointer}
+.atlas3d-pick-map{height:300px;border-radius:10px;overflow:hidden;z-index:0}
+.atlas3d-map-link{display:inline-block;color:#27756b;text-decoration:underline;text-underline-offset:3px;font-weight:700;font-size:13px}
+.atlas3d-caption{font-size:13px;line-height:1.6;color:#65736d}
+@media(max-width:650px){.atlas3d-stage{height:340px}.atlas3d-grid{grid-template-columns:1fr}.atlas3d-controls button{font-size:10px;padding:7px}}
