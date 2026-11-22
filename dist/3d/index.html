@@ -209,19 +209,6 @@
      const record={position,model:null,sphere:null,ready:false,errored:false,terrainHeight:null};
      total++;
      const name=block.caption||story.title||'Modello 3D';
-     // Un marcatore identifica SEMPRE le coordinate dichiarate, anche se il GLB non si apre.
-     viewer.entities.add({
-       // Questo riferimento GPS e' appoggiato al DEM, non alla quota del GLB.
-       // Se il modello sembra spostarsi rispetto al pin, verificare la quota.
-       position:C.Cartesian3.fromDegrees(lon,lat),
-       point:{pixelSize:13,color:C.Color.ORANGE,outlineColor:C.Color.WHITE,outlineWidth:3,
-         heightReference:C.HeightReference.CLAMP_TO_GROUND,
-         disableDepthTestDistance:Number.POSITIVE_INFINITY},
-       label:{text:name+' · punto GPS',font:'bold 15px sans-serif',fillColor:C.Color.WHITE,showBackground:true,
-         backgroundColor:C.Color.fromCssColorString('#193433'),backgroundPadding:new C.Cartesian2(9,5),
-         heightReference:C.HeightReference.CLAMP_TO_GROUND,
-         pixelOffset:new C.Cartesian2(0,-30),style:C.LabelStyle.FILL,disableDepthTestDistance:Number.POSITIVE_INFINITY}
-     });
      const wrapper=document.createElement('div');wrapper.className='model-item';
      const button=document.createElement('button');button.type='button';button.className='model-button';
      const title=document.createElement('strong');title.textContent=name;
