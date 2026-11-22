@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Atlante 3D · Modelli georeferenziati</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cesium@1.134.1/Build/Cesium/Widgets/widgets.css">
+  <style>
+   *{box-sizing:border-box}html,body,#globe{margin:0;width:100%;height:100%;overflow:hidden;font-family:Arial,sans-serif}
+   #globe{position:absolute;inset:0}aside{position:absolute;top:16px;left:16px;width:min(355px,calc(100vw - 32px));max-height:calc(100vh - 32px);overflow:auto;background:#f8f7f1ee;color:#193433;border-radius:15px;padding:18px;box-shadow:0 6px 32px #0005;z-index:5}
+   h1{font:normal 29px Georgia,serif;margin:0 0 5px}p{font-size:12px;line-height:1.5}#models{margin-top:12px;display:flex;flex-direction:column;gap:6px}
+   .model-button{background:#fff;border:1px solid #dbe2dc;border-radius:8px;padding:11px;text-align:left;cursor:pointer;color:#193433}
+   .model-button:hover{border-color:#9cb4a5}.model-button small{display:block;margin-top:4px;color:#65786e}
+   .notice{border-left:3px solid #b77956;padding-left:9px;color:#66442f}
+   a{color:#1e5e55}#status{font-size:12px;color:#496358} .links{display:flex;gap:14px;font-size:12px}
+  </style>
+  <script src="../config.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.79.0/dist/umd/supabase.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/cesium@1.134.1/Build/Cesium/Cesium.js"></script>
+</head>
+<body>
+<div id="globe" aria-label="Globo tridimensionale di Atlante"></div>
+<aside>
+  <h1>Atlante <em>3D.</em></h1>
+  <div class="links"><a href="../">← Mappa 2D</a><a href="../storie/">Geostorie</a></div>
+  <p>Modelli GLB georeferenziati manualmente (metodo A). Coordinate EPSG:4326, quota ellissoidica e orientamento locale.</p>
+  <p id="status" role="status">Caricamento modelli…</p>
+  <div id="models"></div>
+  <p id="terrain-note" class="notice" hidden>Terreno 3D non configurato: è visualizzato l'ellissoide WGS84. Per usare il rilievo reale occorre configurare un provider terrain autorizzato.</p>
+</aside>
+<script>
+(async () => {
+ 'use strict';
+ const status=document.getElementById('status'), list=document.getElementById('models');
+ const cfg=window.ATLAS_CONFIG;
+ const safeGLB = input => {
+   try {const url=new URL(String(input||'')); return ['https:','http:'].includes(url.protocol)&&/\.glb$/i.test(url.pathname)?url.href:''}catch{return ''}
+ };
+ if(!window.Cesium||!window.supabase||!cfg?.supabase?.url){status.textContent='Librerie 3D o configurazione mancanti.';return}
+ const C=Cesium, token=cfg.cesiumIonToken||'';
+ if(token) C.Ion.defaultAccessToken=token;
+ let terrainProvider=new C.EllipsoidTerrainProvider();
+ if(token) {try{terrainProvider=await C.CesiumTerrainProvider.fromIonAssetId(1)}catch(error){console.warn('Terrain Cesium non disponibile',error)}}
+ if(terrainProvider instanceof C.EllipsoidTerrainProvider) document.getElementById('terrain-note').hidden=false;
+ let viewer;
+ try {
+   viewer=new C.Viewer('globe',{
+     baseLayerPicker:false,geocoder:false,animation:false,timeline:false,homeButton:true,
+     navigationHelpButton:false,sceneModePicker:false,fullscreenButton:true,
+     terrainProvider,
+     baseLayer: new C.ImageryLayer(new C.OpenStreetMapImageryProvider({url:'https://tile.openstreetmap.org/'}))
+   });
+ }catch(error){status.textContent='Errore inizializzazione Cesium: '+error.message;return}
+ viewer.scene.globe.depthTestAgainstTerrain=true;
+ const sb=window.supabase.createClient(cfg.supabase.url,cfg.supabase.anonKey);
+ const {data,error}=await sb.from('geostories').select('id,title,blocks,published').eq('published',true);
+ if(error){status.textContent='Impossibile leggere i modelli: '+error.message;return}
+ const params=new URLSearchParams(location.search);
+ let loaded=0;
+ for(const story of data||[]){
+  for(const block of story.blocks||[]){
+   if(block?.type!=='model3d')continue;
+   const url=safeGLB(block.url),lat=Number(block.lat),lon=Number(block.lon);
+   if(!url||block.lat==null||block.lon==null||!Number.isFinite(lat)||Math.abs(lat)>90||!Number.isFinite(lon)||Math.abs(lon)>180)continue;
+   const altitude=Number(block.altitude)||0,scale=Number(block.scale)||1;
+   const heading=C.Math.toRadians(Number(block.heading)||0),pitch=C.Math.toRadians(Number(block.pitch)||0),roll=C.Math.toRadians(Number(block.roll)||0);
+   const position=C.Cartesian3.fromDegrees(lon,lat,altitude);
+   const hpr=new C.HeadingPitchRoll(heading,pitch,roll);
+   const modelMatrix=C.Transforms.headingPitchRollToFixedFrame(position,hpr);
+   C.Matrix4.multiplyByUniformScale(modelMatrix,Math.max(.000001,scale),modelMatrix);
+   let model;
+   try{
+     model=await C.Model.fromGltfAsync({url,modelMatrix,minimumPixelSize:25,maximumScale:100000});
+     viewer.scene.primitives.add(model);
+   }catch(err){console.warn('GLB non caricato:',url,err);continue}
+   const name=block.caption||story.title||'Modello senza nome';
+   const button=document.createElement('button');button.type='button';button.className='model-button';
+   const title=document.createElement('strong');title.textContent=name;
+   const coords=document.createElement('small');coords.textContent=lat.toFixed(6)+', '+lon.toFixed(6)+' · quota '+altitude+' m';
+   button.append(title,coords);list.append(button);
+   const fly=()=>viewer.camera.flyTo({destination:C.Cartesian3.fromDegrees(lon,lat,Math.max(150,Math.min(5000,model.boundingSphere?.radius*4||300))),duration:1.3});
+   button.addEventListener('click',fly);
+   const link=document.createElement('a');link.href='../storie/?story='+encodeURIComponent(story.id);link.textContent='Apri geostoria';link.style.fontSize='11px';button.append(document.createTextNode(' · '),link);
+   if((params.get('story')===story.id&&params.get('block')===block.id)||(!params.has('story')&&!loaded))setTimeout(fly,700);
+   loaded++;
+  }
+ }
+ status.textContent=loaded?loaded+' modelli 3D posizionati':'Nessun modello GLB pubblicato con coordinate geografiche.';
+ if(!loaded) viewer.camera.flyTo({destination:C.Cartesian3.fromDegrees(9.04,40.08,850000)});
+})();
+</script>
+</body></html>
