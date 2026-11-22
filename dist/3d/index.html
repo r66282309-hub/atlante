@@ -167,6 +167,7 @@
      const requested=params.get('story')===story.id&&params.get('block')===block.id;
      if(!autoFocus && (requested || !params.has('story')))autoFocus=record;
      if(!selected)selected=record;
+     if(record===autoFocus)focusArea(record,0);
      try {
        const model=await C.Model.fromGltfAsync({
          url,modelMatrix:matrix,minimumPixelSize:70,maximumScale:100000,
@@ -215,8 +216,11 @@
  }
  refresh();
  // La vista iniziale e' volutamente prospettica: non una pianta zenitale.
- if(autoFocus)focusArea(autoFocus,0);
- else {
+ if(!autoFocus && selected)autoFocus=selected;
+ if(autoFocus) {
+   if(autoFocus.ready)focusModel(autoFocus,0);
+   else focusArea(autoFocus,0);
+ } else {
    const sardinia=C.Cartesian3.fromDegrees(9.04,40.08,350);
    focus(sardinia,30000,220000,-35,1.2);
  }
