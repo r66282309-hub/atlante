@@ -36,11 +36,25 @@
    try {const url=new URL(String(input||'')); return ['https:','http:'].includes(url.protocol)&&/\.glb$/i.test(url.pathname)?url.href:''}catch{return ''}
  };
  if(!window.Cesium||!window.supabase||!cfg?.supabase?.url){status.textContent='Librerie 3D o configurazione mancanti.';return}
- const C=Cesium, token=cfg.cesiumIonToken||'';
+ const C=Cesium;
+ const token=cfg.cesiumIonToken||'';
  if(token) C.Ion.defaultAccessToken=token;
+ // Rilievo georeferenziato su ellissoide WGS84 (EGM2008 gia' applicato).
+ // Servizio pubblico quantized-mesh senza token. Se non disponibile, fallback sicuro.
  let terrainProvider=new C.EllipsoidTerrainProvider();
- if(token) {try{terrainProvider=await C.CesiumTerrainProvider.fromIonAssetId(1)}catch(error){console.warn('Terrain Cesium non disponibile',error)}}
- if(terrainProvider instanceof C.EllipsoidTerrainProvider) document.getElementById('terrain-note').hidden=false;
+ try {
+   terrainProvider=await C.CesiumTerrainProvider.fromUrl('https://terrain.reearth.land/cesium-mesh/ellipsoid',{
+     requestVertexNormals:true,requestWaterMask:false
+   });
+ } catch(error) {
+   console.warn('Rilievo 3D non disponibile. Uso ellissoide WGS84:', error);
+ }
+ const terrainAvailable=!(terrainProvider instanceof C.EllipsoidTerrainProvider);
+ const terrainNote=document.getElementById('terrain-note');
+ terrainNote.hidden=terrainAvailable;
+ if(terrainAvailable) {
+   terrainProvider.errorEvent?.addEventListener(error => console.warn('Errore tile terreno 3D:',error));
+ }
  let viewer;
  try {
    viewer=new C.Viewer('globe',{
@@ -51,6 +65,10 @@
    });
  }catch(error){status.textContent='Errore inizializzazione Cesium: '+error.message;return}
  viewer.scene.globe.depthTestAgainstTerrain=true;
+ viewer.scene.renderError.addEventListener((scene,error) => {
+   console.error('Errore rendering Cesium su questo dispositivo:',error);
+   status.textContent='Rendering 3D interrotto. Consulta la console del browser (F12) per il dettaglio WebGL.';
+ });
  const sb=window.supabase.createClient(cfg.supabase.url,cfg.supabase.anonKey);
  const {data,error}=await sb.from('geostories').select('id,title,blocks,published').eq('published',true);
  if(error){status.textContent='Impossibile leggere i modelli: '+error.message;return}
@@ -84,7 +102,13 @@
    loaded++;
   }
  }
- status.textContent=loaded?loaded+' modelli 3D posizionati':'Nessun modello GLB pubblicato con coordinate geografiche.';
+ status.textContent=loaded?loaded+' modelli 3D posizionati':'Nessun modello GLB pubblicato: carica il modello di Loelle in una Geostoria per visualizzarlo qui.';
+ if(terrainAvailable) {
+   const caption=document.createElement('p');
+   caption.textContent='Rilievo 3D: Re:Earth Terrain · Mapterhorn (CC BY 4.0), quote ellissoidiche.';
+   caption.style.fontSize='11px';caption.style.color='#52685e';
+   list.after(caption);
+ }
  if(!loaded) viewer.camera.flyTo({destination:C.Cartesian3.fromDegrees(9.04,40.08,850000)});
 })();
 </script>
