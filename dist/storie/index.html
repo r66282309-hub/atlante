@@ -18,7 +18,10 @@
     <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
     <script defer src="./rich-editor.js?v=20261111-formatfix"></script>
     <script defer src="./narrative-blocks.js?v=20261111-sticky-center"></script>
-    <script defer src="./stories.js?v=20261111-timeline-map"></script>
+    <script type="importmap">{"imports":{"three":"https://esm.sh/three@0.180.0","three/addons/":"https://esm.sh/three@0.180.0/examples/jsm/"}}</script>
+    <script defer src="./atlas-3d.js?v=20261122-glb"></script>
+    <script defer src="./stories.js?v=20261122-glb"></script>
+  <link rel="stylesheet" href="./atlas-3d.css?v=20261122-glb" />
   </head>
   <body class="story-body">
     <div class="story-app" id="storyApp">
@@ -126,6 +129,7 @@
             <button type="button" data-add="image"><span class="picker-icon image-icon">▧</span><span><strong>Fotografia</strong><small>Dal computer o via URL</small></span><span class="picker-plus">＋</span></button>
             <button type="button" data-add="video"><span class="picker-icon video-icon">▶</span><span><strong>Video</strong><small>YouTube o MP4 ImageKit</small></span><span class="picker-plus">＋</span></button>
             <button type="button" data-add="separator"><span class="picker-icon separator-icon">✳</span><span><strong>Separatore</strong><small>Linea, ornamento o puntini</small></span><span class="picker-plus">＋</span></button>
+            <button type="button" data-add="model3d"><span class="picker-icon map-icon">⬡</span><span><strong>Modello 3D</strong><small>GLB e coordinate geografiche</small></span><span class="picker-plus">＋</span></button>
             <button type="button" data-add="map"><span class="picker-icon map-icon">◇</span><span><strong>Mini-mappa</strong><small>Cartografia Leaflet</small></span><span class="picker-plus">＋</span></button>
             <button type="button" data-add="gallery"><span class="picker-icon gallery-icon">▤</span><span><strong>Galleria</strong><small>Più fotografie, un solo racconto</small></span><span class="picker-plus">＋</span></button>
             <button type="button" data-add="quote"><span class="picker-icon quote-icon">❝</span><span><strong>Citazione</strong><small>Frasi e riflessioni in evidenza</small></span><span class="picker-plus">＋</span></button>
@@ -159,6 +163,7 @@
         <button type="button" data-add="image"><span>▧</span>Fotografia</button>
         <button type="button" data-add="video"><span>▶</span>Video</button>
         <button type="button" data-add="separator"><span>✳</span>Separatore</button>
+        <button type="button" data-add="model3d"><span>⬡</span>Modello 3D</button>
         <button type="button" data-add="map"><span>◇</span>Mini-mappa</button>
         <button type="button" data-add="gallery"><span>▤</span>Galleria</button>
         <button type="button" data-add="quote"><span>❝</span>Citazione</button>

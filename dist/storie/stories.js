@@ -3,9 +3,9 @@
 
   const $ = id => document.getElementById(id);
   const config = window.ATLAS_CONFIG;
-  const TYPES = ['heading', 'paragraph', 'waypoint', 'image', 'video', 'separator', 'map', 'gallery', 'quote', 'insight', 'route', 'compare', 'timeline', 'chapter'];
-  const TYPE_NAMES = { heading: 'Titolo', paragraph: 'Testo', waypoint: 'Waypoint', image: 'Fotografia', video: 'Video', separator: 'Separatore', map: 'Mini-mappa', gallery: 'Galleria', quote: 'Citazione', insight: 'Approfondimento', route: 'Percorso', compare: 'Prima / dopo', timeline: 'Linea del tempo', chapter: 'Capitolo immersivo' };
-  const TYPE_ICONS = { heading: 'T', paragraph: '≡', waypoint: '⌖', image: '▧', video: '▶', separator: '✳', map: '◇', gallery: '▤', quote: '❝', insight: '◈', route: '⌁', compare: '◫', timeline: '◷', chapter: '▣' };
+  const TYPES = ['heading', 'paragraph', 'waypoint', 'image', 'video', 'separator', 'map', 'gallery', 'quote', 'insight', 'route', 'compare', 'timeline', 'chapter', 'model3d'];
+  const TYPE_NAMES = { heading: 'Titolo', paragraph: 'Testo', waypoint: 'Waypoint', image: 'Fotografia', video: 'Video', separator: 'Separatore', map: 'Mini-mappa', gallery: 'Galleria', quote: 'Citazione', insight: 'Approfondimento', route: 'Percorso', compare: 'Prima / dopo', timeline: 'Linea del tempo', chapter: 'Capitolo immersivo', model3d: 'Modello 3D' };
+  const TYPE_ICONS = { heading: 'T', paragraph: '≡', waypoint: '⌖', image: '▧', video: '▶', separator: '✳', map: '◇', gallery: '▤', quote: '❝', insight: '◈', route: '⌁', compare: '◫', timeline: '◷', chapter: '▣', model3d: '⬡' };
   const state = { stories: [], current: null, waypoints: [], localStories: [], preview: false, maps: [], saveTimer: null, savingPromise: null, dirty: false, revision: 0, pendingImageId: null, storageError: false };
   let editorInitialized = false;
   let authChecked = false;
@@ -826,6 +826,7 @@
       case 'compare': return block.caption || 'Prima / dopo';
       case 'timeline': return 'Linea del tempo · ' + (block.events?.length || 0) + ' tappe';
       case 'chapter': return block.title || 'Capitolo';
+      case 'model3d': return block.caption || 'Modello 3D';
       case 'map': return block.caption || 'Mini-mappa';
       default: return 'Blocco';
     }
@@ -1286,6 +1287,13 @@
         }));
         break;
       }
+      case 'model3d': {
+        content.append(window.Atlas3D.render(block, preview, {
+          control: makeControl, save: queueSave, renderAll: renderBlocks, notice,
+          upload: upload3DModel, waypoints: state.waypoints, storyId: state.current.id
+        }));
+        break;
+      }
       case 'map': {
         if (!preview) {
           const options = [{ value: '', label: 'Coordinate manuali' }, ...state.waypoints.map(point => ({ value: String(point.id), label: point.title }))];
@@ -1382,6 +1390,7 @@
 
   function renderBlocks() {
     clearMiniMaps();
+    window.Atlas3D?.destroyAll();
     const container = $('storyBlocks');
     container.replaceChildren();
     container.classList.add('story-blocks-layout');
@@ -1454,6 +1463,7 @@
       case 'compare': return { ...common, before: '', after: '', beforeLabel: 'Prima', afterLabel: 'Dopo', caption: '' };
       case 'timeline': return { ...common, events: [], showMap: false, routeSource: 'none', routeBlockId: '', segments: [], basemap: 'osm' };
       case 'chapter': return { ...common, kicker: 'UN NUOVO CAPITOLO', title: 'Una nuova tappa', subtitle: '', src: '' };
+      case 'model3d': return { ...common, url:'', caption:'', lat: null, lon: null, altitude:0, heading:0, pitch:0, roll:0, scale:1 };
       case 'map': return { ...common, lat: Number(state.waypoints[0]?.lat || 40.08), lon: Number(state.waypoints[0]?.lon || 9.04), zoom: 11, basemap: 'osm', caption: '' };
       default: return { ...common, text: '' };
     }
@@ -1565,6 +1575,34 @@
     }
   }
 
+  async function upload3DModel(file, blockId) {
+    if (!isEditor() || !state.current || !file) return;
+    if (!/\.glb$/i.test(file.name) || file.size > 45 * 1024 * 1024 || file.size === 0) {
+      notice('Seleziona un GLB valido, massimo 45 MB.'); return;
+    }
+    const currentStoryId = state.current.id;
+    try {
+      setSaveStatus('Caricamento modello 3D…', true);
+      const path = window.atlasAuth.user.id + '/geostories/' + currentStoryId + '/' + uid() + '.glb';
+      const bucket = client().storage.from('geostory-models');
+      const {error} = await bucket.upload(path, file, {contentType:'model/gltf-binary',upsert:false});
+      if (error) throw error;
+      const url = bucket.getPublicUrl(path).data.publicUrl;
+      if (state.current?.id !== currentStoryId) return;
+      const block = state.current.blocks.find(b => b.id === blockId && b.type === 'model3d');
+      if (!block) return;
+      block.url = url;
+      queueSave();
+      renderBlocks();
+      if (await saveNow()) notice('Modello GLB caricato e collegato alla geostoria.');
+    } catch(error) {
+      console.error('Upload GLB:',error);
+      notice('Impossibile caricare il GLB: ' + (error?.message || error));
+    } finally {
+      if (state.current?.id === currentStoryId) setSaveStatus(state.dirty ? 'Modifiche da salvare…' : 'Salvataggio completato');
+    }
+  }
+
   async function uploadLocalImage(file, blockId = null) {
     if (!file) return;
     const activeStoryId = state.current?.id;
@@ -1672,6 +1710,15 @@
       if (item.type === 'chapter') {
         block.kicker=asText(item.kicker,90);block.title=asText(item.title,180);
         block.subtitle=asText(item.subtitle,450);block.src=imageUrl(item.src);
+      }
+      if (item.type === 'model3d') {
+        block.url = window.Atlas3D?.safeGLB(item.url) || '';
+        block.caption = asText(item.caption,1000);
+        const num=(v,min,max,fallback)=>v!==null&&v!==undefined&&v!==''&&Number.isFinite(Number(v))&&Number(v)>=min&&Number(v)<=max?Number(v):fallback;
+        block.lat=num(item.lat,-90,90,null); block.lon=num(item.lon,-180,180,null);
+        block.altitude=num(item.altitude,-12000,100000,0);
+        block.heading=num(item.heading,-360,360,0);block.pitch=num(item.pitch,-360,360,0);
+        block.roll=num(item.roll,-360,360,0);block.scale=num(item.scale,0.000001,1000000,1);
       }
       if (item.type === 'map') {
         block.lat = Number(item.lat) >= -90 && Number(item.lat) <= 90 ? Number(item.lat) : 40.08;
